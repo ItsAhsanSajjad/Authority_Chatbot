@@ -1,0 +1,32 @@
+=== FRESH SESSION TESTS (each separate session) ===
+
+Q: 'manager development salary' (session=fresh_A)
+A: The salary for the position of Manager (Development) is categorized under the SPPP pay scale, but the specific pay scale or benefits are not detailed in the provided context. If you need more specific
+R: Compiled Working Paper_2n p.347, Annex H Contractual Emplo p.22, Compiled Working Paper_2n p.388
+
+Q: 'what is the salary of manager development' (session=fresh_B)
+A: The salary for the position of Manager (Development) is categorized under the SPPP-3 pay scale, along with any other benefits admissible to SPPP-3 as mentioned in Schedule-III.
+R: Annex H Contractual Emplo p.22, Compiled Working Paper_2n p.347, Annex H Contractual Emplo p.67
+
+Q: 'manager's development head' (session=fresh_C)
+A: The position of **Manager (Development)** reports to the **Chief Technology Officer (CTO)** within the **IT & Communication** wing. The purpose of this position is to maximize the productivity and per
+R: Compiled Working Paper_2n p.347, Annex H Contractual Emplo p.22, Compiled Working Paper_2n p.385
+
+
+=== FOLLOW-UP SESSION TEST (same session) ===
+
+Q: 'what is the salary of manager development'
+A: The salary for the position of Manager (Development) is categorized under the SPPP-3 pay scale, along with any other benefits admissible to SPPP-3 as mentioned in Schedule-III.
+R: Annex H Contractual Emplo p.22, Compiled Working Paper_2n p.347, Annex H Contractual Emplo p.67
+
+Q: 'he is reporting to?'
+A: The reporting structure for the positions mentioned is as follows:
+
+1. **Database Administrator**: Reports to the **Manager (Development)** in the **IT & Communication** wing.
+2. **Assistant Manager (
+R: Annex H Contractual Emplo p.31, Annex H Contractual Emplo p.53, Compiled Working Paper_2n p.347
+
+Q: 'manager development salary'
+A: The salary for the position of Manager (Development) is categorized under the SPPP-3 pay scale, along with any other benefits admissible to SPPP-3 as mentioned in Schedule-III.
+R: Compiled Working Paper_2n p.347, Annex H Contractual Emplo p.22, Compiled Working Paper_2n p.388
+

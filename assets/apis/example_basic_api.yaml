@@ -1,0 +1,94 @@
+# ──────────────────────────────────────────────────────────────
+# Example: Basic API Source (no pagination)
+# Place YAML config files in assets/apis/ to register API sources.
+# ──────────────────────────────────────────────────────────────
+
+source_id: employees_api
+source_type: api
+display_name: "PERA Employees API"
+enabled: false  # Disabled — example.gov.pk does not exist
+
+fetch:
+  method: GET
+  url: https://example.gov.pk/api/employees
+  headers:
+    Accept: application/json
+  timeout_seconds: 30
+  retry_count: 3
+  retry_backoff_seconds: 2
+  pagination:
+    type: none  # no pagination
+
+auth:
+  type: bearer_env
+  token_env: EMPLOYEES_API_TOKEN  # reads from environment variable
+
+sync:
+  interval_minutes: 30
+  full_refresh_every_hours: 24
+  delete_missing_records: true
+
+normalization:
+  root_selector: data
+  record_id_field: employee_id
+  record_type: employee
+  include_fields:
+    - employee_id
+    - name
+    - designation
+    - department
+    - grade
+    - date_of_joining
+  exclude_fields: []
+  nested_strategy: flatten
+  text_template: |
+    Employee record.
+    Name: {name}
+    Employee ID: {employee_id}
+    Designation: {designation}
+    Department: {department}
+    Grade: {grade}
+    Date of Joining: {date_of_joining}
+
+indexing:
+  authority: 3
+  tags:
+    - pera
+    - hr
+    - employees
+
+# ── Query-Time Lookup (auto-discovered by api_lookup_registry) ──
+# Adding this section makes the API available for stored & live
+# queries WITHOUT any code changes.  Just define keywords +
+# display templates below.
+lookup:
+  enabled: true
+  # Simple keywords — if any word/phrase appears in the question,
+  # this API is matched (case-insensitive substring match).
+  keywords:
+    - employee
+    - employees
+    - staff list
+    - staff directory
+  # Regex patterns — more precise matching (re.IGNORECASE).
+  # Checked BEFORE keywords.  Use \\b for word boundaries.
+  keyword_patterns:
+    - "\\b(?:employee|employees|staff\\s+(?:list|directory))\\b"
+    - "\\b(?:list\\s+(?:all\\s+)?employees?)\\b"
+    - "\\b(?:who\\s+works?|who\\s+is\\s+(?:posted|assigned))\\b"
+  # Display formatting for stored/live responses
+  title: "PERA Employees"
+  subtitle: "({count} records)"
+  sort_by: name
+  record_template: "- **{name}** — {designation}, {department} (Grade {grade})"
+  # Context formatting for the LLM evidence
+  context_title: "Complete list of PERA employees"
+  context_record_template: "- {name}, {designation}, {department}, Grade {grade}"
+  # Optional: aggregations (sum numeric fields)
+  # aggregations:
+  #   - field: salary
+  #     label: Total Salary
+  # summary_template: "**Totals**: Salary {Total Salary}"
+  # Live API display overrides
+  live_title: "Live Data: PERA Employees"
+  live_max_records: 100

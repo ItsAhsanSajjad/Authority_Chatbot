@@ -1,0 +1,189 @@
+======================================================================
+EXHAUSTIVE 30-QUERY DIAGNOSTIC
+======================================================================
+
+[GOOD  ] | salary          | Q: SSO salary
+  A: The salary for the position of System Support Officer is classified as **SPPP-5**. Additionally, any other benefits admissible to SPPP-5 as mentioned in Schedule-III will also apply.
+  R: Compiled Working Pap p.308, Compiled Working Pap p.323, Annex G Employees SR p.57
+
+[GOOD  ] | salary          | Q: manager development salary
+  A: The salary for the position of Manager (Development) is classified as SPPP-3, along with any other benefits admissible to SPPP-3 as mentioned in Schedule-III.
+  R: Compiled Working Pap p.347, Annex H Contractual  p.22, Compiled Working Pap p.388
+
+[GOOD  ] | salary          | Q: deputy director salary
+  A: The salary and benefits for the position of Deputy Director are equivalent to **BPS-18** plus a **PERA Special Allowance or Deputation Allowance**, a vehicle, and any other benefits admissible to this position.
+  R: Compiled Working Pap p.306, Annex G Employees SR p.34, Annex G Employees SR p.41
+
+[GOOD  ] | salary          | Q: assistant manager hr salary
+  A: The salary for the position of Manager HR is classified as SPPP-5, along with any other benefits admissible to SPPP-5 as mentioned in Schedule-III. Appointments are made by the Director General based on the recommendations of the Contractual Employme
+  R: Annex H Contractual  p.46, Compiled Working Pap p.370, Compiled Working Pap p.364
+
+[GOOD  ] | salary          | Q: director general salary
+  A: The salary and benefits for the Director General of PERA are equivalent to **BS-20** + PERA Special Allowance + Vehicle + any other benefits admissible to this position.
+
+Note: This answer is derived from the relevant PERA provisions and is not state
+  R: Annex G Employees SR p.30, Annex G Employees SR p.32, Compiled Working Pap p.302
+
+[GOOD  ] | salary          | Q: enforcement officer salary
+  A: However, the appointment details mention that it is explained in column 5 of Schedule-II, which may contain relevant information regarding the salary structure.
+
+Note: This answer is derived from the relevant PERA provisions and is not stated as a si
+  R: Annex H Contractual  p.21, Compiled Working Pap p.319, Compiled Working Pap p.206
+
+[GOOD  ] | salary          | Q: investigation officer salary
+  A: The salary and benefits for the position of Investigation Officer are equivalent to **BPS-11** along with the **PERA Special Allowance or Deputation Allowance** and any other benefits admissible to this position.
+  R: Compiled Working Pap p.318, Compiled Working Pap p.321, Flag-C; O&Ps Code.pd p.37
+
+[GOOD  ] | salary          | Q: web developer salary
+  A: The salary for the position of Web & Software Developer is set at **SPPP-4**, along with any other benefits admissible to SPPP-4 as mentioned in Schedule-III.
+  R: Compiled Working Pap p.354, Annex H Contractual  p.29, Compiled Working Pap p.355
+
+[GOOD  ] | salary          | Q: CTO salary
+  A: The salary for the Chief Technology Officer (CTO) position is set at **SPPP-1**, along with any other benefits admissible to SPPP-1 as mentioned in Schedule-III.
+  R: Compiled Working Pap p.346, Annex H Contractual  p.21, Annex H Contractual  p.24
+
+[GOOD  ] | salary          | Q: senior sergeant salary
+  A: The salary for the position of Senior Sergeant is equivalent to **BPS-09** plus the **PERA Special Allowance or Deputation Allowance** and any other benefits admissible to this position.
+  R: Annex H Contractual  p.79, Annex G Employees SR p.56, Compiled Working Pap p.322
+
+[GOOD  ] | responsibilities | Q: what are the responsibilities of enforcement officer
+  A: The responsibilities of an Enforcement Officer include:
+
+- Executing orders of the Sub-Divisional Enforcement Officers (SDEOs) for the enforcement of scheduled laws.
+- Devising strategies and coordinating with other agencies to prevent offences under
+  R: Compiled Working Pap p.319, Annex G Employees SR p.52, Compiled Working Pap p.16
+
+[GOOD  ] | responsibilities | Q: CTO responsibilities
+  A: The responsibilities of the Chief Technology Officer (CTO) at PERA include:
+
+- Leading the IT & Communication Wing of PERA and being responsible for the development, deployment, upgradation, upscaling, and troubleshooting of all IT-related technical 
+  R: Compiled Working Pap p.346, Annex H Contractual  p.21, Compiled Working Pap p.349
+
+[GOOD  ] | responsibilities | Q: what does manager development do
+  A: The **Manager (Development)** is responsible for maximizing the productivity and performance of IT Applications, Custom Developed Software, and Web Portals. The key responsibilities include:
+
+- Directing daily, weekly, and monthly activities.
+- Provi
+  R: Compiled Working Pap p.347, Annex H Contractual  p.22, Compiled Working Pap p.388
+
+[GOOD  ] | responsibilities | Q: duties of investigation officer
+  A: The duties of the Investigation Officer include:
+
+- Assisting the Sub-Divisional Enforcement Officers (SDEOs) and Enforcement Officers (EOs) in the enforcement of scheduled laws.
+- Exercising powers and carrying out functions as prescribed by rules/r
+  R: (10 of 2024) The Pun p.35, Annex L PERA Squads  p.3, Annex L PERA Squads  p.4
+
+[GOOD  ] | reporting       | Q: who does SSO report to
+  A: The System Support Officer (SSO) reports to the Sub Divisional Enforcement Officer (SDEO) of the Enforcement Station concerned.
+  R: Compiled Working Pap p.363, Annex H Contractual  p.38, Annex H Contractual  p.63
+
+[GOOD  ] | reporting       | Q: who reports to CTO
+  A: ERROR: HTTPConnectionPool(host='localhost', port=8000): Read timed out. (read timeout=30)
+  R: 
+
+[GOOD  ] | reporting       | Q: reporting structure of enforcement officer
+  A: The Enforcement Officer reports to the Sub-Divisional Enforcement Officer (SDEO).
+  R: Annex L PERA Squads  p.3, Compiled Working Pap p.422, Compiled Working Pap p.212
+
+[GOOD  ] | reporting       | Q: who does director general report to
+  A: The Director General of PERA reports to the Authority.
+
+Note: This answer is derived from the relevant PERA provisions and is not stated as a single standalone clause in the documents.
+  R: Annex G Employees SR p.30, Annex G Employees SR p.25, Compiled Working Pap p.296
+
+[GOOD  ] | qualification   | Q: qualification required for SSO
+  A: The qualifications required for the position of System Support Officer (SSO) are as follows:
+
+1. **Education**:
+ - 16 years of education, preferably in Computer Science, Information Technology, Software Engineering, or any related discipline. Alterna
+  R: Annex H Contractual  p.38, Compiled Working Pap p.363, Annex H Contractual  p.78
+
+[GOOD  ] | appointment     | Q: how is manager development appointed
+  A: The Manager (Development) is appointed by the Director General on the recommendation of the Contractual Employment Committee.
+
+Note: This answer is derived from the relevant PERA provisions and is not stated as a single standalone clause in the docum
+  R: Compiled Working Pap p.347, Annex H Contractual  p.22, Compiled Working Pap p.388
+
+[GOOD  ] | qualification   | Q: experience required for CTO
+  A: The experience required for the Chief Technology Officer (CTO) position is as follows:
+
+1. **For candidates with an MS or MPhil (First Division) in Computer Science, Software Engineering, or Information Technology:**
+ - 10 years of post-qualification
+  R: Compiled Working Pap p.346, Annex H Contractual  p.21, Annex H Contractual  p.24
+
+[HEDGED] | appointment     | Q: appointment process for enforcement officer
+  A: The appointment process for the Enforcement Officer is explained in column 5 of Schedule-II, but specific details regarding the criteria or steps involved in the appointment are not provided in the available context.
+  R: Compiled Working Pap p.319, Annex G Employees SR p.52, Annex G Employees SR p.54
+
+[GOOD  ] | schedule        | Q: SPPP-3 pay scale details
+  A: The details for the SPPP-3 pay scale are as follows:
+
+- **Minimum Pay per Month:** PKR 250,051
+- **Maximum Pay per Month:** PKR 500,051
+- **Fuel Limit (Petrol Liters/Month):** 200
+
+Additionally, employees on the SPPP-3 pay scale are entitled to any o
+  R: Compiled Working Pap p.156, Compiled Working Pap p.401, Annex H Contractual  p.83
+
+[GOOD  ] | schedule        | Q: what is Schedule-II about
+  A: Schedule-II outlines the "Appointment and Conditions of Service" for employees within the Punjab Enforcement and Regulatory Authority (PERA). It includes details such as:
+
+- The nomenclature of various posts.
+- The appointing authority for each posit
+  R: Annex G Employees SR p.4, Compiled Working Pap p.276, Compiled Working Pap p.328
+
+[GOOD  ] | structure       | Q: organizational structure of PERA
+  A: The organizational structure of the Punjab Enforcement and Regulatory Authority (PERA) includes various positions and wings as outlined in Schedule-I of the relevant regulations. Here are some key components of the structure:
+
+- **Director General**:
+  R: Annex G Employees SR p.3, Annex H Contractual  p.1, Annex H Contractual  p.2
+
+[GOOD  ] | general         | Q: what is PERA
+  A: The Punjab Enforcement and Regulatory Authority (PERA) is an organization committed to enforcing laws and regulations in a manner that promotes public service and compliance. It operates based on core values such as ethical enforcement, transparency,
+  R: Compiled Working Pap p.451, Compiled Working Pap p.462, Flag-I; HR Manual.pd p.16
+
+[GOOD  ] | complex         | Q: who is the head of IT wing and what are their responsibilities
+  A: The head of the IT wing is the Chief Technology Officer (CTO). The responsibilities of the CTO include:
+
+- Providing technical leadership to the team of IT professionals.
+- Assisting the Director General in ensuring IT-enabled solutions for all funct
+  R: Annex H Contractual  p.71, Compiled Working Pap p.392, Flag-S; MOM Selectio p.3
+
+[GOOD  ] | complex         | Q: what officers work under SDEO
+  A: The officers who work under the Sub-Divisional Enforcement Officer (SDEO) are Enforcement Officers. They report directly to the SDEO and are responsible for performing all enforcement and regulatory field operations for the implementation of the Act 
+  R: Annex G Employees SR p.50, Compiled Working Pap p.318, Compiled Working Pap p.214
+
+[GOOD  ] | complex         | Q: difference between enforcement officer and investigation officer
+  A: The **Enforcement Officer** and **Investigation Officer** have distinct roles and responsibilities within the Punjab Enforcement and Regulatory Authority (PERA):
+
+### Enforcement Officer
+- **Purpose**: Responsible for performing all enforcement and r
+  R: Compiled Working Pap p.431, Flag-H; Uniform Regu p.4, Compiled Working Pap p.18
+
+[GOOD  ] | complex         | Q: list all positions in IT and Communication wing
+  A: The positions in the IT and Communication wing of PERA include:
+
+1. **Chief Technology Officer (CTO)**
+ - Responsible for providing technical leadership and ensuring IT-enabled solutions for all functions of PERA.
+
+2. **System Support Officer**
+ - As
+  R: Annex H Contractual  p.21, Compiled Working Pap p.346, Annex H Contractual  p.24
+
+
+======================================================================
+SUMMARY BY CATEGORY
+======================================================================
+
+  appointment    : 1/2 passed
+    ❌ [HEDGED] appointment process for enforcement officer: The appointment process for the Enforcement Officer is explained in column 5 of Schedule-II, but spe
+  complex        : 4/4 passed
+  general        : 1/1 passed
+  qualification  : 2/2 passed
+  reporting      : 4/4 passed
+  responsibilities: 4/4 passed
+  salary         : 10/10 passed
+  schedule       : 2/2 passed
+  structure      : 1/1 passed
+
+  TOTAL: 29/30 (96%)

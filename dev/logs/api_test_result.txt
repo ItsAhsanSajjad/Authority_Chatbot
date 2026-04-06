@@ -1,0 +1,18 @@
+=== TEST 1: 'manager development salary' ===
+ANSWER: The salary for the position of Manager (Development) is categorized under the SPPP-3 pay scale, along with any other benefits admissible to SPPP-3 as mentioned in Schedule-III.
+
+REFERENCES:
+  Compiled Working Paper_2nd Meeting PERA 03-07-2025.pdf  p.347
+  Annex H Contractual Employees SRs.pdf  p.22
+  Compiled Working Paper_2nd Meeting PERA 03-07-2025.pdf  p.388
+  Annex H Contractual Employees SRs.pdf  p.67
+
+
+=== TEST 2: 'what is the salary of manager development' ===
+ANSWER: The salary for the position of Manager (Development) is categorized under the SPPP-3 pay scale, along with any other benefits admissible to SPPP-3 as mentioned in Schedule-III.
+
+REFERENCES:
+  Annex H Contractual Employees SRs.pdf  p.22
+  Compiled Working Paper_2nd Meeting PERA 03-07-2025.pdf  p.347
+  Annex H Contractual Employees SRs.pdf  p.67
+  Compiled Working Paper_2nd Meeting PERA 03-07-2025.pdf  p.348

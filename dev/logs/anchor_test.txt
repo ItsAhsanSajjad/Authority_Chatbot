@@ -1,0 +1,20 @@
+=== needs_anchoring tests ===
+  'salary of this?' -> True
+  'manager development' -> False
+  'he is reporting to?' -> True
+  'what is its salary?' -> True
+  'how much salary?' -> True
+  'position title' -> True
+  'salary' -> True
+
+=== extract_subject tests ===
+  'The Manager (Development) position at PERA is responsible fo' -> 'Manager (Development)'
+  'The salary for Manager Development is SPPP-3' -> 'Manager Development is'
+  'Manager (Development) reports to CTO' -> 'Manager (Development)'
+  'manager development' -> 'manager development'
+
+=== anchor_query tests ===
+  'salary of this?' + subj='Manager Development' -> '[Context: regarding Manager Development] salary of this?' (was_anchored=True)
+  'he is reporting to?' + subj='Manager Development' -> '[Context: regarding Manager Development] he is reporting to?' (was_anchored=True)
+  'how much salary?' + subj='Manager (Development)' -> '[Context: regarding Manager (Development)] how much salary?' (was_anchored=True)
+  'position title' + subj='Manager (Development)' -> '[Context: regarding Manager (Development)] position title' (was_anchored=True)

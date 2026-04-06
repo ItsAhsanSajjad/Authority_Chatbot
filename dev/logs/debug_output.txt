@@ -1,0 +1,74 @@
+=== EXACT 'Manager (Development)' matches: 6 ===
+
+ID: 93, Doc: Annex H Contractual Employees SRs.pdf, Page: 22
+Position Title: - Manager (Development) Report To: - Chief Technology Officer (CTO) Wing: - IT & Communications Purpose of the Position:
+Responsible for maximizing the productivity / performance of IT Applications / Custom Developed Software / Web Portals by directing the daily, weekly, and monthly 
+
+ID: 100, Doc: Annex H Contractual Employees SRs.pdf, Page: 29
+Position Title: - Web & Software Developer Report To: - Manager (Development) Wing: - IT & Communication Purpose of the Position:
+He shall design, develop, and maintain web and software applications to meet business and user requirements. This role involves working across front -end, back -end, and 
+
+ID: 101, Doc: Annex H Contractual Employees SRs.pdf, Page: 30
+Position Title: - Android Developer Report To: - Manager (Development) Wing: - IT & Communication Purpose of the Position:
+The Android Developer designs, develops, and maintains high-performance Android applications. This role involves working with Kotlin/Java, modern Android frameworks, and best pr
+
+ID: 102, Doc: Annex H Contractual Employees SRs.pdf, Page: 31
+Position Title: - Database Administrator Report To: - Manager (Development) Wing: - IT & Communication Purpose of the Position:
+Responsible for demonstrating database administration, advanced performance analysis and tuning skills. Design and development of database, data warehouse and multi-Dimensi
+
+ID: 488, Doc: Compiled Working Paper_2nd Meeting PERA 03-07-2025.pdf, Page: 347
+Position Title: - Manager (Development) Report To: - Chief Technology Officer (CTO) Wing: - IT & Communication Purpose of the Position:
+Responsible for maximizing the productivity / performance of IT Applications / Custom Developed Software / Web Portals by directing the daily, weekly, and monthly a
+
+ID: 495, Doc: Compiled Working Paper_2nd Meeting PERA 03-07-2025.pdf, Page: 354
+Position Title: - Web & Software Developer Report To: - Manager (Development) Wing: - IT & Communication Purpose of the Position:
+He shall design, develop, and maintain web and software applications to meet business and user requirements. This role involves working across front -end, back -end, and 
+
+
+=== Broad 'manager' + 'development' matches: 31 ===
+
+ID: 95, Doc: Annex H Contractual Employees SRs.pdf, Page: 24
+Position Title: - Manager (Infrastructure & Networks) Report To: - Chief Technology Officer (CTO) Wing: - IT & Communication Purpose of the Position:
+Responsible for maximizing the performance of IT i
+
+ID: 98, Doc: Annex H Contractual Employees SRs.pdf, Page: 27
+Position Title: - Assistant Manager (Network) Report To: - Manager (Infrastructure & Networks) Wing: - IT & Communication Purpose of the Position:
+Responsible for maximizing the performance of IT Netw
+
+ID: 99, Doc: Annex H Contractual Employees SRs.pdf, Page: 28
+Position Title: - Assistant Manager (IT Infrastructure) Report To: - Manager (Infrastructure & Networks) Wing: - IT & Communication Purpose of the Position:
+Responsible for maximizing the performance 
+
+ID: 112, Doc: Annex H Contractual Employees SRs.pdf, Page: 41
+Position Title: - Manager (HR & Talent Acquisition) Report To: - Deputy Director (Admin. & HR) Wing: - Administration & HR Purpose of the Position:
+The Manager (HR & Talent Acquisition) Specialist sup
+
+ID: 113, Doc: Annex H Contractual Employees SRs.pdf, Page: 42
+Position Title: - Deputy Manager (HR) Report To: - Manager (HR & Talent Acquisition) Wing: - Administration & HR Purpose of the Position:
+The Deputy Manager – Human Resources plays a critical role in 
+
+
+===== RETRIEVAL TEST: 'manager development salary' =====
+Has evidence: True
+
+Doc: Compiled Working Paper_2nd Meeting PERA 03-07-2025.pdf, max_score: 0.407
+  Page 347: score=0.422
+  Text: Position Title: - Manager (Development) Report To: - Chief Technology Officer (CTO) Wing: - IT & Communication Purpose of the Position:
+Responsible for maximizing the productivity / performance of IT 
+  Page 366: score=0.395
+  Text: Position Title: - Deputy Manager HR Report To: - Assistant Director Admin. & HR Wing: - Administration & HR Purpose of the Position:
+The Deputy Manager – Human Resources plays a critical role in suppo
+  Page 390: score=0.389
+  Text: Position Title: - Assistant Manager Monitoring Report To: - Head Monitoring (MIS & GIS) Wing: - Monitoring & Implementation Purpose of the Position:
+The Assistant Manager Monitoring is responsible for
+
+Doc: Annex H Contractual Employees SRs.pdf, max_score: 0.404
+  Page 47: score=0.391
+  Text: Position Title: - Assistant Manager (Talent Acquisition) Report To: - Deputy Manager (HR & Talent Acquisition) Wing: - Administration & HR Purpose of the Position:
+The Assistant Manager (Talent Acquis
+  Page 42: score=0.390
+  Text: Position Title: - Deputy Manager (HR) Report To: - Manager (HR & Talent Acquisition) Wing: - Administration & HR Purpose of the Position:
+The Deputy Manager – Human Resources plays a critical role in 
+  Page 41: score=0.388
+  Text: Position Title: - Manager (HR & Talent Acquisition) Report To: - Deputy Director (Admin. & HR) Wing: - Administration & HR Purpose of the Position:
+The Manager (HR & Talent Acquisition) Specialist sup

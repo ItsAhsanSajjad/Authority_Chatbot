@@ -1,0 +1,148 @@
+REFERENCE ACCURACY TEST
+======================================================================
+
+Q: SSO salary
+  Answer [✅]: The salary for the position of System Support Officer is classified as SPPP-5, along with any other benefits admissible to SPPP-5 as mentioned in Schedule-III.
+  Ref 1 [✅]: Annex H Contractual Emplo p.38 | Position Title: - System Support Officer Report To: - Sub Divisional Enforcement
+  Ref 2 [  ]: Compiled Working Paper_2n p.363 | Position Title: - System Support Officer Report To: - Sub Divisional Enforcement
+  Ref 3 [  ]: Compiled Working Paper_2n p.175 | Post Name BS Strength Per ES Total No. ESs Total Strength Secretary District Boa
+  Ref 4 [  ]: Compiled Working Paper_2n p.171 | Post Name BS Strength Per ES Total No. ESs Total Strength Secretary District Boa
+
+Q: manager development salary
+  Answer [✅]: The salary for the position of Manager (Development) is classified under the SPPP-3 pay scale, along with any other benefits admissible to SPPP-3 as mentioned in Schedule-III.
+  Ref 1 [✅]: Compiled Working Paper_2n p.347 | Position Title: - Manager (Development) Report To: - Chief Technology Officer (C
+  Ref 2 [  ]: Annex H Contractual Emplo p.22 | Position Title: - Manager (Development) Report To: - Chief Technology Officer (C
+  Ref 3 [  ]: Compiled Working Paper_2n p.388 | [Role: Manager (Research & Implementation)]
+Report To: | Deputy Director (Implem
+  Ref 4 [  ]: Annex H Contractual Emplo p.67 | [Role: Manager (Research & Implementation)]
+Report To: | Assistant Director (Imp
+
+Q: deputy director salary
+  Answer [✅]: The salary and benefits for the position of Deputy Director are equivalent to **BPS-18** plus a **PERA Special Allowance or Deputation Allowance**, a vehicle, and any other benefits admissible to this
+  Ref 1 [✅]: Compiled Working Paper_2n p.306 | Position Title: Deputy Director (Finance) Reports to: Director Finance Purpose o
+  Ref 2 [  ]: Annex G Employees SRs 1.p p.34 | Position Title: Deputy Director (Finance) Reports to: Additional Director Genera
+  Ref 3 [  ]: Compiled Working Paper_2n p.307 | Position Title: Deputy Director (Implementation) Reports to: Director (Monitorin
+  Ref 4 [  ]: Compiled Working Paper_2n p.305 | Position Title: Deputy Director (Administration & HR)
+Reports To: | Director (Ad
+
+Q: investigation officer salary
+  Answer [✅]: The salary and benefits for the position of Investigation Officer are equivalent to **BPS-11** along with the **PERA Special Allowance** or **Deputation Allowance**, plus any other benefits admissible
+  Ref 1 [✅]: Compiled Working Paper_2n p.321 | Position Title: | Investigation Officer
+Reports To: Sub-Divisional Enforcement O
+  Ref 2 [  ]: Annex G Employees SRs 1.p p.54 | Position Title: | Investigation Officer
+Reports To: Sub-Divisional Enforcement O
+  Ref 3 [  ]: Compiled Working Paper_2n p.220 | (40) Cost of Investigation: (1) The Investigation Officer conducting investigati
+  Ref 4 [  ]: Flag-C; O&Ps Code.pdf p.37 | (40) Cost of Investigation: (1) The Investigation Officer conducting investigati
+
+Q: CTO salary
+  Answer [✅]: The salary for the Chief Technology Officer (CTO) position is set at **SPPP-1**, along with any other benefits admissible to SPPP-1 as mentioned in Schedule-III.
+  Ref 1 [✅]: Compiled Working Paper_2n p.346 | Schedule-II Terms and Reference for Contractual Employment Position Title: - Chi
+  Ref 2 [  ]: Annex H Contractual Emplo p.21 | Schedule-II Terms and Reference for Contractual Employment Position Title: - Chi
+  Ref 3 [  ]: Compiled Working Paper_2n p.165 | Head Count
+
+• SPPP - 14
+• BS 16 - 01
+• Total - 15Chief Technology
+
+Officer / SPP
+  Ref 4 [  ]: Compiled Working Paper_2n p.348 | Appointment shall be made by the Director General on the recommendation of the C
+
+Q: web developer salary
+  Answer [✅]: The salary for the position of Web & Software Developer is set at **SPPP-4**, along with any other benefits admissible to SPPP-4 as mentioned in Schedule-III.
+  Ref 1 [✅]: Compiled Working Paper_2n p.354 | Position Title: - Web & Software Developer Report To: - Manager (Development) Wi
+  Ref 2 [  ]: Annex H Contractual Emplo p.29 | Position Title: - Web & Software Developer Report To: - Manager (Development) Wi
+  Ref 3 [  ]: Compiled Working Paper_2n p.348 | Appointment shall be made by the Director General on the recommendation of the C
+  Ref 4 [  ]: Compiled Working Paper_2n p.357 |  Strong leadership, team building and problem-solving abilities  Inquisitive a
+
+Q: IO salary
+  Answer [✅]: The salary and benefits for the position of Investigation Officer are equivalent to **BPS-11** plus the PERA Special Allowance or Deputation Allowance, along with any other benefits admissible to this
+  Ref 1 [✅]: Compiled Working Paper_2n p.321 | Position Title: | Investigation Officer
+Reports To: Sub-Divisional Enforcement O
+  Ref 2 [  ]: Annex G Employees SRs 1.p p.54 | Position Title: | Investigation Officer
+Reports To: Sub-Divisional Enforcement O
+  Ref 3 [  ]: Compiled Working Paper_2n p.220 | (40) Cost of Investigation: (1) The Investigation Officer conducting investigati
+  Ref 4 [  ]: Flag-C; O&Ps Code.pdf p.37 | (40) Cost of Investigation: (1) The Investigation Officer conducting investigati
+
+Q: DG salary
+  Answer [✅]: The salary and benefits for the Director General of PERA are equivalent to **BS-20** + PERA Special Allowance + Vehicle + any other benefits admissible to this position.
+
+Note: This answer is derived 
+  Ref 1 [✅]: Annex G Employees SRs 1.p p.30 | Position Title: Additional Director General (Finance) Reports To: Director Gener
+  Ref 2 [  ]: Compiled Working Paper_2n p.302 | Position Title: Director (Finance) Reports To: Director General Purpose of the P
+  Ref 3 [  ]: Annex G Employees SRs 1.p p.32 | Position Title: | Additional Director General (Monitoring & Implementation)
+Repo
+  Ref 4 [  ]: Annex G Employees SRs 1.p p.28 | Schedule-III Terms and Reference for Service Position Title: Director General PE
+
+Q: senior sergeant salary
+  Answer [✅]: The salary and benefits for the position of Senior Sergeant are equivalent to **BPS-09** plus the **PERA Special Allowance or Deputation Allowance** and any other benefits admissible to this position.
+  Ref 1 [✅]: Annex H Contractual Emplo p.79 | Position Title: Senior Sergeant (STRIKE) Reports To: SDEO Wing: - Monitoring & I
+  Ref 2 [  ]: Annex G Employees SRs 1.p p.56 | Position Title: | Senior Sergeant
+Reports To: SDEO, Enforcement Officer and Inve
+  Ref 3 [  ]: Compiled Working Paper_2n p.322 | Position Title: | Senior Sergeant
+Reports To: SDEO, Enforcement Officer and Inve
+  Ref 4 [  ]: Annex G Employees SRs 1.p p.57 | Position Title: | Sergeant
+Reports To: SDEO, EO, IO and Senior Sergeant Purpose 
+
+Q: assistant manager hr salary
+  Answer [✅]: The salary for the position of Assistant Manager HR is classified as SPPP-5, along with any other benefits admissible to SPPP-5 as mentioned in Schedule-III.
+  Ref 1 [❌]: Compiled Working Paper_2n p.364 |  Noting / drafting skills Appointment:
+Appointment shall be made by Director Ge
+  Ref 2 [  ]: Annex H Contractual Emplo p.39 | Appointment:
+Appointment shall be made by Director General on the recommendation
+
+Q: who does SSO report to
+  Answer [✅]: The System Support Officer (SSO) reports to the Sub Divisional Enforcement Officer (SDEO) of the Enforcement Station concerned.
+  Ref 1 [✅]: Compiled Working Paper_2n p.363 | Position Title: - System Support Officer Report To: - Sub Divisional Enforcement
+  Ref 2 [  ]: Annex H Contractual Emplo p.38 | Position Title: - System Support Officer Report To: - Sub Divisional Enforcement
+
+Q: enforcement officer salary
+  Answer [✅]: The salary for the position of Enforcement Officer is equivalent to BPS-16. Additionally, the position may include a PERA Special Allowance or Deputation Allowance, along with any other benefits admis
+  Ref 1 [✅]: Compiled Working Paper_2n p.319 | Position Title: | Enforcement Officer
+Reports To: Sub-Divisional Enforcement Off
+  Ref 2 [  ]: Compiled Working Paper_2n p.318 | Position Title: | Sub-Divisional Enforcement Officer
+Reports To: Chairperson and
+  Ref 3 [  ]: Annex G Employees SRs 1.p p.52 | Position Title: | Enforcement Officer
+Reports To: Sub-Divisional Enforcement Off
+  Ref 4 [  ]: Annex G Employees SRs 1.p p.50 | Position Title: | Sub-Divisional Enforcement Officer
+Reports To: Chairperson and
+
+Q: data entry operator salary
+  Answer [✅]: The salary for a Data Entry Operator is classified under the SPPP-2 pay scale, along with any other benefits admissible to SPPP-2 as mentioned in Schedule-III.
+
+Note: This answer is derived from the r
+  Ref 1 [✅]: Annex H Contractual Emplo p.64 | • Ensure the Authority’s reporting obligations are fulfilled with clarity, timel
+  Ref 2 [  ]: Annex H Contractual Emplo p.32 | • Experience in data preparation, visualization, analysis, and dashboard develop
+  Ref 3 [  ]: Annex H Contractual Emplo p.66 | Appointment:
+Appointment shall be made by Director General on the recommendation
+  Ref 4 [  ]: Annex G Employees SRs 1.p p.36 | Appointment:
+As explained in column 5 of Schedule-II. Salary and Benefits:
+Pay &
+
+Q: who is the head of IT wing
+  Answer [✅]: The head of the IT & Communication Wing is the Chief Technology Officer (CTO), who reports to the Director General of PERA.
+  Ref 1 [✅]: Flag-S; MOM Selection Pan p.3 | LAHORE Flag-A Term of Reference
+
+1. Preamble
+
+In line with the statutory framewo
+  Ref 2 [  ]: Compiled Working Paper_2n p.346 | Schedule-II Terms and Reference for Contractual Employment Position Title: - Chi
+  Ref 3 [  ]: Annex H Contractual Emplo p.21 | Schedule-II Terms and Reference for Contractual Employment Position Title: - Chi
+  Ref 4 [  ]: Annex H Contractual Emplo p.24 | Position Title: - Manager (Infrastructure & Networks) Report To: - Chief Technol
+
+Q: SPPP-3 pay scale details
+  Answer [✅]: The details for the SPPP-3 pay scale are as follows:
+
+- **Minimum Pay per Month:** PKR 250,051
+- **Maximum Pay per Month:** PKR 500,051
+- **Fuel Limit (Petrol Liters/Month):** 200
+
+Additionally, emplo
+  Ref 1 [✅]: Compiled Working Paper_2n p.156 | Sr. No. Special Pay Package PERA (SPPP) Govt Equivalent Basic Pay Scale PERA Spe
+  Ref 2 [  ]: Compiled Working Paper_2n p.401 | Special Pay Package PERA (SPPP) Breakup Sr. No. Special Pay Package PERA (SPPP) 
+  Ref 3 [  ]: Annex H Contractual Emplo p.83 | Special Pay Package PERA (SPPP) Breakup Sr. No. Special Pay Package PERA (SPPP) 
+  Ref 4 [  ]: Compiled Working Paper_2n p.155 | Sr. No. Special Pay Package PERA SPPP Minimum Pay per Month (PKR) Maximum Pay pe
+
+======================================================================
+ANSWERS: 15/15 correct (100%)
+REFERENCES: 14/15 relevant (93%)
+======================================================================

@@ -1,0 +1,71 @@
+ROLE DETECTED: 'manager development'
+EXPECTED: 'manager development'
+
+Extract from 'Position Title: - Manager (Development) Report To:': 'manager (development)'
+Extract from 'Position Title: - Deputy Manager HR Report To: - A': 'deputy manager hr'
+Extract from 'Appointment shall be made by DG. Salary: SPPP-3': ''
+
+
+=== FULL RETRIEVAL TEST ===
+Total docs: 2
+Doc: Compiled Working Paper_2nd Meeting PERA 03-07-2025.pdf
+  p.347 score=0.422 ctx=False title='manager (development)' text='Position Title: - Manager (Development) Report To: - Chief Technology Officer (C'
+  p.366 score=0.395 ctx=False title='deputy manager hr' text='Position Title: - Deputy Manager HR Report To: - Assistant Director Admin. & HR '
+  p.390 score=0.389 ctx=False title='assistant manager monitoring' text='Position Title: - Assistant Manager Monitoring Report To: - Head Monitoring (MIS'
+  p.352 score=0.378 ctx=False title='assistant manager (network)' text='Position Title: - Assistant Manager (Network) Report To: - Manager (Infrastructu'
+  p.354 score=0.375 ctx=False title='web & software developer' text='Position Title: - Web & Software Developer Report To: - Manager (Development) Wi'
+  p.355 score=0.374 ctx=False title='android developer' text='Position Title: - Android Developer Report To: - Manager Development Wing: - IT '
+  p.396 score=0.370 ctx=False title='deputy manager training' text='Position Title: - Deputy Manager Training Report To: - Senior Manager Training &'
+  p.353 score=0.369 ctx=False title='assistant manager (it infrastructure)' text='Position Title: - Assistant Manager (IT Infrastructure) Report To: - Manager (In'
+  p.388 score=0.180 ctx=True title='' text='[Role: Manager (Research & Implementation)]
+Report To: | Deputy Director (Implem'
+  p.391 score=0.180 ctx=True title='assistant manager gis' text='Position Title: - Assistant Manager GIS Report To: - Head Monitoring (MIS & GIS)'
+  p.372 score=0.180 ctx=True title='assistant manager procurement' text='Position Title: - Assistant Manager Procurement Report To: - Head Procurement Wi'
+  p.385 score=0.180 ctx=True title='' text=' Ensure the Authority’s reporting obligations are fulfilled with clarity, timel'
+  p.346 score=0.180 ctx=True title='chief technology officer (cto)' text='Schedule-II Terms and Reference for Contractual Employment Position Title: - Chi'
+  p.349 score=0.180 ctx=True title='manager (infrastructure & networks)' text='Position Title: - Manager (Infrastructure & Networks) Report To: - Chief Technol'
+  p.367 score=0.180 ctx=True title='deputy manager inventory & warehousing' text='Position Title: - Deputy Manager Inventory & Warehousing Report To: - Assistant '
+  p.368 score=0.180 ctx=True title='assistant manager logistics' text='Position Title: - Assistant Manager Logistics Report To: - Deputy Manager Invent'
+  p.369 score=0.180 ctx=True title='assistant manager stores' text='Position Title: - Assistant Manager Stores Report To: - Deputy Manager Inventory'
+  p.384 score=0.180 ctx=True title='head monitoring (mis & gis)' text='Position Title: - Head Monitoring (MIS & GIS) Report To: - Director Monitoring &'
+  p.387 score=0.180 ctx=True title='' text='Appointment:
+Appointment shall be made by Director General on the recommendation'
+  p.389 score=0.180 ctx=True title='business analyst' text='Position Title: - Business Analyst Report To: - Head Monitoring (MIS & GIS) Wing'
+  p.348 score=0.180 ctx=True title='' text='Appointment shall be made by the Director General on the recommendation of the C'
+  p.364 score=0.180 ctx=True title='' text=' Noting / drafting skills Appointment:
+Appointment shall be made by Director Ge'
+  p.365 score=0.180 ctx=True title='head procurement & contracting' text='Position Title: - Head Procurement & Contracting Report To: - Director Administr'
+Doc: Annex H Contractual Employees SRs.pdf
+  p.47 score=0.391 ctx=False title='assistant manager (talent acquisition)' text='Position Title: - Assistant Manager (Talent Acquisition) Report To: - Deputy Man'
+  p.42 score=0.390 ctx=False title='deputy manager (hr)' text='Position Title: - Deputy Manager (HR) Report To: - Manager (HR & Talent Acquisit'
+  p.41 score=0.388 ctx=False title='manager (hr & talent acquisition)' text='Position Title: - Manager (HR & Talent Acquisition) Report To: - Deputy Director'
+  p.22 score=0.412 ctx=False title='manager (development)' text='Position Title: - Manager (Development) Report To: - Chief Technology Officer (C'
+  p.69 score=0.385 ctx=False title='assistant manager (monitoring)' text='Position Title: - Assistant Manager (Monitoring) Report To: - Manager Monitoring'
+  p.27 score=0.377 ctx=False title='assistant manager (network)' text='Position Title: - Assistant Manager (Network) Report To: - Manager (Infrastructu'
+  p.30 score=0.376 ctx=False title='android developer' text='Position Title: - Android Developer Report To: - Manager (Development) Wing: - I'
+  p.28 score=0.371 ctx=False title='assistant manager (it infrastructure)' text='Position Title: - Assistant Manager (IT Infrastructure) Report To: - Manager (In'
+  p.67 score=0.180 ctx=True title='' text='[Role: Manager (Research & Implementation)]
+Report To: | Assistant Director (Imp'
+  p.64 score=0.180 ctx=True title='' text='• Ensure the Authority’s reporting obligations are fulfilled with clarity, timel'
+  p.21 score=0.180 ctx=True title='chief technology officer (cto)' text='Schedule-II Terms and Reference for Contractual Employment Position Title: - Chi'
+  p.24 score=0.180 ctx=True title='manager (infrastructure & networks)' text='Position Title: - Manager (Infrastructure & Networks) Report To: - Chief Technol'
+  p.43 score=0.180 ctx=True title='deputy manager (inventory & warehousing)' text='Position Title: - Deputy Manager (Inventory & Warehousing) Report To: - Assistan'
+  p.44 score=0.180 ctx=True title='assistant manager (logistics)' text='Position Title: - Assistant Manager (Logistics) Report To: - Deputy Manager (Inv'
+  p.45 score=0.180 ctx=True title='assistant manager (stores)' text='Position Title: - Assistant Manager (Stores) Report To: - Deputy Manager (Invent'
+  p.49 score=0.180 ctx=True title='assistant manager (procurement)' text='Position Title: - Assistant Manager (Procurement) Report To: - Head (Procurement'
+  p.63 score=0.180 ctx=True title='head monitoring (mis & gis)' text='Position Title: - Head Monitoring (MIS & GIS) Report To: - ADG (Monitoring & Imp'
+  p.66 score=0.180 ctx=True title='' text='Appointment:
+Appointment shall be made by Director General on the recommendation'
+  p.23 score=0.180 ctx=True title='' text='Appointment:
+Appointment shall be made by the Director General on the recommenda'
+  p.39 score=0.180 ctx=True title='' text='Appointment:
+Appointment shall be made by Director General on the recommendation'
+  p.40 score=0.180 ctx=True title='head (procurement & contracting)' text='Position Title: - Head (Procurement & Contracting) Report To: - ADG (Admin & HR)'
+
+=== FORMATTED EVIDENCE (position-filtered) ===
+  Compiled Working Paper_2nd Meeting PERA 03-07-2025 p.347
+  Annex H Contractual Employees SRs.pdf p.22
+  Compiled Working Paper_2nd Meeting PERA 03-07-2025 p.366
+  Annex H Contractual Employees SRs.pdf p.47
+
+Total evidence chars: 13625

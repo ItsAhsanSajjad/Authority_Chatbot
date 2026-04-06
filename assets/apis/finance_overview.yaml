@@ -1,0 +1,78 @@
+# ──────────────────────────────────────────────────────────────
+# PERA360 API: Finance Overview
+# Production endpoint — monthly expenditure data
+# ──────────────────────────────────────────────────────────────
+
+source_id: finance_overview
+source_type: api
+display_name: "PERA Finance Overview"
+enabled: true
+
+fetch:
+  method: GET
+  url: https://pera360.punjab.gov.pk/backend/api/finance-overview
+  headers:
+    Accept: application/json
+  timeout_seconds: 30
+  retry_count: 3
+  retry_backoff_seconds: 2
+  pagination:
+    type: none
+
+auth:
+  type: none
+
+sync:
+  interval_minutes: 120
+  full_refresh_every_hours: 12
+  delete_missing_records: true
+
+normalization:
+  root_selector: series
+  record_id_field: month
+  record_type: finance_month
+  include_fields:
+    - month
+    - expenditure
+  exclude_fields: []
+  nested_strategy: flatten
+  text_template: |
+    PERA finance overview monthly expenditure record.
+    Month: {month}
+    Expenditure: {expenditure}
+
+indexing:
+  authority: 3
+  tags:
+    - pera
+    - finance
+    - budget
+    - dashboard
+
+# ── Query-Time Lookup (auto-discovered by api_lookup_registry) ──
+lookup:
+  enabled: true
+  keywords:
+    - finance
+    - expenditure
+    - budget
+    - spending
+    - expense
+    - kharcha
+    - maali
+    - paisa
+    - revenue
+  keyword_patterns:
+    - "\\b(?:finance\\s+(?:overview|data)|expenditure|budget|spending)\\b"
+    - "\\b(?:monthly\\s+(?:expense|expenditure|budget|spending))\\b"
+    - "\\b(?:financial\\s+(?:data|overview|summary))\\b"
+    - "\\b(?:kharcha|maali|paisa|revenue)\\b"
+    - "\\b(?:expense\\s+(?:data|report|summary)|cost\\s+overview)\\b"
+  title: "PERA Finance Overview"
+  subtitle: ""
+  sort_by: ""
+  record_template: "- **{month}**: Rs. {expenditure}"
+  context_title: "PERA Finance Overview (Monthly Expenditure)"
+  context_record_template: "- {month}: Rs. {expenditure}"
+  live_title: "Live Data: PERA Finance Overview"
+  live_max_records: 50

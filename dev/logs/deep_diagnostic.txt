@@ -1,0 +1,140 @@
+======================================================================
+QUERY: SSO salary
+======================================================================
+EXPANDED: System Support Officer salary
+TARGET_ROLE: 'system support officer'
+TOTAL_RETRIEVED: 41 hits across 3 docs
+POSITION_MATCHING: 2 exact match
+ALL_POSITIONS: ['Assistant Director (Administration & HR)', '| Sergeant', 'System Support Officer', 'Assistant Manager IT & LMS', 'Assistant Manager (IT Infrastructure)', 'Content / Script Writer', 'Associate Social Media', 'Head Procurement & Contracting']
+EVIDENCE_ASSEMBLED: 8 chunks, 12319 chars
+HAS_SALARY_DATA: True
+HAS_POSITION_TITLE: True
+EVIDENCE_PREVIEW: <evidence doc="Annex H Contractual Employees SRs.pdf" page="38" eid="177f75d657"> Position Title: - System Support Officer Report To: - Sub Divisional Enforcement Officer, Concerned Wing Head Wing: - Enforcement Station, M&I, IT & Communication, Training Purpose of the Position: The System Support Officer assist the SDEO with the various functions at Enforcement Stations. including providing compr
+
+
+======================================================================
+QUERY: enforcement officer salary
+======================================================================
+EXPANDED: enforcement officer salary
+TARGET_ROLE: 'enforcement officer'
+TOTAL_RETRIEVED: 45 hits across 5 docs
+POSITION_MATCHING: 4 exact match
+ALL_POSITIONS: ['| Secretary, District Enforcement & Regulatory Board', '| Director (Personnel)', '| Senior Sergeant', '| Enforcement Officer', '| Sub-Divisional Enforcement Officer', '| Investigation Officer', '| Sergeant', 'Chief Technology Officer (CTO)']
+EVIDENCE_ASSEMBLED: 5 chunks, 14447 chars
+HAS_SALARY_DATA: True
+HAS_POSITION_TITLE: True
+EVIDENCE_PREVIEW: <evidence doc="Compiled Working Paper_2nd Meeting PERA 03-07-2025.pdf" page="319" eid="4671b5baad"> Position Title: | Enforcement Officer Reports To: Sub-Divisional Enforcement Officer Purpose of the Position: To perform all enforcement and regulatory field operations for implementation of the Act and the scheduled laws including inspections and punitive actions in his area of jurisdiction. Areas 
+
+
+======================================================================
+QUERY: data entry operator salary
+======================================================================
+EXPANDED: data entry operator salary
+TARGET_ROLE: 'data entry operator'
+TOTAL_RETRIEVED: 48 hits across 3 docs
+POSITION_MATCHING: 0 exact match
+ALL_POSITIONS: ['Database Administrator', 'Business Analyst', 'Web & Software Developer', 'Assistant Manager (IT & LMS)', 'Assistant Manager (Monitoring)', 'Assistant Manager (HR)', 'Assistant Manager (GIS)', 'Android Developer']
+EVIDENCE_ASSEMBLED: 9 chunks, 10794 chars
+HAS_SALARY_DATA: True
+HAS_POSITION_TITLE: True
+EVIDENCE_PREVIEW: <evidence doc="Annex H Contractual Employees SRs.pdf" page="31" eid="c387a7937a"> Position Title: - Database Administrator Report To: - Manager (Development) Wing: - IT & Communication Purpose of the Position: Responsible for demonstrating database administration, advanced performance analysis and tuning skills. Design and development of database, data warehouse and multi-Dimensional database. Are
+
+
+======================================================================
+QUERY: manager development salary
+======================================================================
+EXPANDED: manager development salary Manager (Development)
+TARGET_ROLE: 'manager development'
+TOTAL_RETRIEVED: 45 hits across 3 docs
+POSITION_MATCHING: 2 exact match
+ALL_POSITIONS: ['Manager (Development)', 'Deputy Manager HR', 'Assistant Manager Monitoring', 'Assistant Manager (Network)', 'Assistant Manager (IT Infrastructure)', 'Manager Monitoring', 'Deputy Manager Training', 'Web & Software Developer']
+EVIDENCE_ASSEMBLED: 5 chunks, 15227 chars
+HAS_SALARY_DATA: True
+HAS_POSITION_TITLE: True
+EVIDENCE_PREVIEW: <evidence doc="Compiled Working Paper_2nd Meeting PERA 03-07-2025.pdf" page="347" eid="9b261c345f"> Position Title: - Manager (Development) Report To: - Chief Technology Officer (CTO) Wing: - IT & Communication Purpose of the Position: Responsible for maximizing the productivity / performance of IT Applications / Custom Developed Software / Web Portals by directing the daily, weekly, and monthly a
+
+
+======================================================================
+QUERY: investigation officer salary
+======================================================================
+EXPANDED: investigation officer salary
+TARGET_ROLE: 'investigation officer'
+TOTAL_RETRIEVED: 50 hits across 5 docs
+POSITION_MATCHING: 2 exact match
+ALL_POSITIONS: ['| Secretary, District Enforcement & Regulatory Board', 'Assistant Manager Personnel', '| Sub-Divisional Enforcement Officer', '| Investigation Officer', 'Prosecutor', '| Senior Sergeant', 'Assistant Manager Legal', 'Assistant Manager Prosecution']
+EVIDENCE_ASSEMBLED: 7 chunks, 15037 chars
+HAS_SALARY_DATA: True
+HAS_POSITION_TITLE: True
+EVIDENCE_PREVIEW: <evidence doc="Compiled Working Paper_2nd Meeting PERA 03-07-2025.pdf" page="321" eid="e826aa031e"> Position Title: | Investigation Officer Reports To: Sub-Divisional Enforcement Officer and Enforcement Officer Purpose of the Position: To assist and enable the SDEO and EO in exercising their powers and performing their duties related to implementation of the Act and the scheduled laws, through inv
+
+
+======================================================================
+QUERY: deputy director salary
+======================================================================
+EXPANDED: deputy director salary
+TARGET_ROLE: ''
+TOTAL_RETRIEVED: 32 hits across 4 docs
+POSITION_MATCHING: 0 exact match
+ALL_POSITIONS: ['Deputy Director (Finance) Reports to: Director Finance Purpose of the Position:', 'Deputy Director (Implementation) Reports to: Director (Monitoring & Implementation) Purpose of the Position:', 'Deputy Director (Administration & HR)', '| Assistant Director Finance (Budget)', 'Assistant Director (Administration & HR)', 'Deputy Manager HR', 'Deputy Manager Training', '| Director (Monitoring & Implementation)']
+EVIDENCE_ASSEMBLED: 6 chunks, 14832 chars
+HAS_SALARY_DATA: True
+HAS_POSITION_TITLE: True
+EVIDENCE_PREVIEW: <evidence doc="Compiled Working Paper_2nd Meeting PERA 03-07-2025.pdf" page="306" eid="b9f8850956"> Position Title: Deputy Director (Finance) Reports to: Director Finance Purpose of the Position: To assist Director (Finance) in carrying out all functions related to financial management, planning, budgeting and accounts of PERA at Headquarter as well as at Enforcement Stations. Areas of Responsibil
+
+
+======================================================================
+QUERY: senior sergeant responsibilities
+======================================================================
+EXPANDED: senior sergeant responsibilities
+TARGET_ROLE: 'senior sergeant'
+TOTAL_RETRIEVED: 22 hits across 4 docs
+POSITION_MATCHING: 5 exact match
+ALL_POSITIONS: ['| Assistant Director (Personnel)', '| Senior Sergeant', '| Sergeant', '| Assistant Director (Discipline)', '| Director (Personnel)', '| Sub-Divisional Enforcement Officer', 'Assistant Manager Discipline', '| Senior Sergeant']
+EVIDENCE_ASSEMBLED: 5 chunks, 14603 chars
+HAS_SALARY_DATA: True
+HAS_POSITION_TITLE: True
+EVIDENCE_PREVIEW: <evidence doc="Annex H Contractual Employees SRs.pdf" page="79" eid="2a644c57f2"> Position Title: Senior Sergeant (STRIKE) Reports To: SDEO Wing: - Monitoring & Implementation Purpose of the Position: The Senior Sergeant shall serve as a field supervisor within the STRIKE Unit, responsible for tactical coordination, operational readiness, and command over assigned Sergeants. The role ensures the d
+
+
+======================================================================
+QUERY: appointment process for officers
+======================================================================
+EXPANDED: appointment process for officers
+TARGET_ROLE: ''
+TOTAL_RETRIEVED: 45 hits across 5 docs
+POSITION_MATCHING: 0 exact match
+ALL_POSITIONS: ['| Assistant Director (Discipline)', 'Assistant Manager IT & LMS', '| Sergeant', 'Assistant Manager Personnel', 'Director General PERA Reports To: Authority Purpose of the Position:', 'Assistant Director (Administration & Logistics)', '| Assistant Director (Discipline)', '| Sergeant']
+EVIDENCE_ASSEMBLED: 6 chunks, 14892 chars
+HAS_SALARY_DATA: True
+HAS_POSITION_TITLE: True
+EVIDENCE_PREVIEW: <evidence doc="Compiled Working Paper_2nd Meeting PERA 03-07-2025.pdf" page="47" eid="4e7567e9e0"> 5.2 | Therefore, it is proposed that DG PERA being procuring agency may be allowed to enter into contract agreement of Rs. 683.79 Million with M/S Sehgal Motors.pk. composition and TORs of the said committee may be finalized by DG PERA and may be presented in the next Authority meeting. 6 6. POSTING 
+
+
+======================================================================
+QUERY: SPPP-3 pay scale details
+======================================================================
+EXPANDED: SPPP-3 pay scale details
+TARGET_ROLE: ''
+TOTAL_RETRIEVED: 43 hits across 5 docs
+POSITION_MATCHING: 0 exact match
+ALL_POSITIONS: ['Assistant Manager Legal', 'Assistant Manager Prosecution', 'Assistant Manager Admin & Logistics', 'Assistant Manager IT & LMS', 'Head Legal & Prosecution', 'Business Analyst', 'Sergeant (Strike) Reports To: SDEO Wing: - Monitoring & Implementation Purpose of the Position:', 'Manager (Monitoring)']
+EVIDENCE_ASSEMBLED: 13 chunks, 12824 chars
+HAS_SALARY_DATA: True
+HAS_POSITION_TITLE: False
+EVIDENCE_PREVIEW: <evidence doc="Compiled Working Paper_2nd Meeting PERA 03-07-2025.pdf" page="156" eid="14458dc05d"> Sr. No. Special Pay Package PERA (SPPP) Govt Equivalent Basic Pay Scale PERA Special Allowance Social Security Allowance In lieu of Pension @ 30% *Vehicle Monetization Allowance **Driver Allowance Minimum Pay ***Market Adjustment Allowance (Negotiable) Maximum Pay Fuel Limit (Petrol Liters) 1 SPPP-1
+
+
+======================================================================
+QUERY: who reports to CTO
+======================================================================
+EXPANDED: who reports to Chief Technology Officer
+TARGET_ROLE: 'chief technology officer'
+TOTAL_RETRIEVED: 29 hits across 2 docs
+POSITION_MATCHING: 2 exact match
+ALL_POSITIONS: ['Chief Technology Officer (CTO)', 'Manager (Infrastructure & Networks)', 'Manager (Development)', 'Manager (Digital Strategy & Communication)', 'Assistant Manager IT & LMS', 'System Support Officer', 'Head Monitoring (MIS & GIS)', 'Assistant Manager Admin & Logistics']
+EVIDENCE_ASSEMBLED: 8 chunks, 10864 chars
+HAS_SALARY_DATA: True
+HAS_POSITION_TITLE: True
+EVIDENCE_PREVIEW: <evidence doc="Compiled Working Paper_2nd Meeting PERA 03-07-2025.pdf" page="346" eid="a659f19651"> Schedule-II Terms and Reference for Contractual Employment Position Title: - Chief Technology Officer (CTO) Report To: - Director General, PERA Wing: - IT & Communication Purpose of the Position: CTO shall be responsible for providing technical leadership to the team of IT professionals. He shall as
+
+

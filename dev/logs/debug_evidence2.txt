@@ -1,0 +1,109 @@
+=== TARGET ROLE DETECTION ===
+Detected: 'manager development'
+
+=== ALL HITS (raw from retriever) ===
+p.347  ctx=False  score=0.422  title='manager (development)'
+  Position Title: - Manager (Development) Report To: - Chief Technology Officer (CTO) Wing: - IT & Com
+p.366  ctx=False  score=0.395  title='deputy manager hr'
+  Position Title: - Deputy Manager HR Report To: - Assistant Director Admin. & HR Wing: - Administrati
+p.390  ctx=False  score=0.389  title='assistant manager monitoring'
+  Position Title: - Assistant Manager Monitoring Report To: - Head Monitoring (MIS & GIS) Wing: - Moni
+p.352  ctx=False  score=0.378  title='assistant manager (network)'
+  Position Title: - Assistant Manager (Network) Report To: - Manager (Infrastructure & Networks) Wing:
+p.354  ctx=False  score=0.375  title='web & software developer'
+  Position Title: - Web & Software Developer Report To: - Manager (Development) Wing: - IT & Communica
+p.355  ctx=False  score=0.374  title='android developer'
+  Position Title: - Android Developer Report To: - Manager Development Wing: - IT & Communication Purp
+p.396  ctx=False  score=0.370  title='deputy manager training'
+  Position Title: - Deputy Manager Training Report To: - Senior Manager Training & Admin Wing: - Train
+p.353  ctx=False  score=0.369  title='assistant manager (it infrastructure)'
+  Position Title: - Assistant Manager (IT Infrastructure) Report To: - Manager (Infrastructure & Netwo
+p.388  ctx=True  score=0.180  title=''
+  [Role: Manager (Research & Implementation)]
+Report To: | Deputy Director (Implementation)
+Wing: - Mo
+p.391  ctx=True  score=0.180  title='assistant manager gis'
+  Position Title: - Assistant Manager GIS Report To: - Head Monitoring (MIS & GIS) Wing: - Monitoring 
+p.372  ctx=True  score=0.180  title='assistant manager procurement'
+  Position Title: - Assistant Manager Procurement Report To: - Head Procurement Wing: - Administration
+p.385  ctx=True  score=0.180  title=''
+   Ensure the Authority’s reporting obligations are fulfilled with clarity, timeliness, and strategic
+p.346  ctx=True  score=0.180  title='chief technology officer (cto)'
+  Schedule-II Terms and Reference for Contractual Employment Position Title: - Chief Technology Office
+p.349  ctx=True  score=0.180  title='manager (infrastructure & networks)'
+  Position Title: - Manager (Infrastructure & Networks) Report To: - Chief Technology Officer (CTO) Wi
+p.367  ctx=True  score=0.180  title='deputy manager inventory & warehousing'
+  Position Title: - Deputy Manager Inventory & Warehousing Report To: - Assistant Director Logistics &
+p.368  ctx=True  score=0.180  title='assistant manager logistics'
+  Position Title: - Assistant Manager Logistics Report To: - Deputy Manager Inventory & Warehousing Wi
+p.369  ctx=True  score=0.180  title='assistant manager stores'
+  Position Title: - Assistant Manager Stores Report To: - Deputy Manager Inventory & Warehousing Wing:
+p.384  ctx=True  score=0.180  title='head monitoring (mis & gis)'
+  Position Title: - Head Monitoring (MIS & GIS) Report To: - Director Monitoring & Implementation Wing
+p.387  ctx=True  score=0.180  title=''
+  Appointment:
+Appointment shall be made by Director General on the recommendation of contractual empl
+p.389  ctx=True  score=0.180  title='business analyst'
+  Position Title: - Business Analyst Report To: - Head Monitoring (MIS & GIS) Wing: - Monitoring & Imp
+p.348  ctx=True  score=0.180  title=''
+  Appointment shall be made by the Director General on the recommendation of the Contractual Employmen
+p.364  ctx=True  score=0.180  title=''
+   Noting / drafting skills Appointment:
+Appointment shall be made by Director General on the recomme
+p.365  ctx=True  score=0.180  title='head procurement & contracting'
+  Position Title: - Head Procurement & Contracting Report To: - Director Administration & HR Wing: - A
+p.47  ctx=False  score=0.391  title='assistant manager (talent acquisition)'
+  Position Title: - Assistant Manager (Talent Acquisition) Report To: - Deputy Manager (HR & Talent Ac
+p.42  ctx=False  score=0.390  title='deputy manager (hr)'
+  Position Title: - Deputy Manager (HR) Report To: - Manager (HR & Talent Acquisition) Wing: - Adminis
+p.41  ctx=False  score=0.388  title='manager (hr & talent acquisition)'
+  Position Title: - Manager (HR & Talent Acquisition) Report To: - Deputy Director (Admin. & HR) Wing:
+p.22  ctx=False  score=0.412  title='manager (development)'
+  Position Title: - Manager (Development) Report To: - Chief Technology Officer (CTO) Wing: - IT & Com
+p.69  ctx=False  score=0.385  title='assistant manager (monitoring)'
+  Position Title: - Assistant Manager (Monitoring) Report To: - Manager Monitoring (MIS & GIS) Wing: -
+p.27  ctx=False  score=0.377  title='assistant manager (network)'
+  Position Title: - Assistant Manager (Network) Report To: - Manager (Infrastructure & Networks) Wing:
+p.30  ctx=False  score=0.376  title='android developer'
+  Position Title: - Android Developer Report To: - Manager (Development) Wing: - IT & Communication Pu
+p.28  ctx=False  score=0.371  title='assistant manager (it infrastructure)'
+  Position Title: - Assistant Manager (IT Infrastructure) Report To: - Manager (Infrastructure & Netwo
+p.67  ctx=True  score=0.180  title=''
+  [Role: Manager (Research & Implementation)]
+Report To: | Assistant Director (Implementation)
+Wing: -
+p.64  ctx=True  score=0.180  title=''
+  • Ensure the Authority’s reporting obligations are fulfilled with clarity, timeliness, and strategic
+p.21  ctx=True  score=0.180  title='chief technology officer (cto)'
+  Schedule-II Terms and Reference for Contractual Employment Position Title: - Chief Technology Office
+p.24  ctx=True  score=0.180  title='manager (infrastructure & networks)'
+  Position Title: - Manager (Infrastructure & Networks) Report To: - Chief Technology Officer (CTO) Wi
+p.43  ctx=True  score=0.180  title='deputy manager (inventory & warehousing)'
+  Position Title: - Deputy Manager (Inventory & Warehousing) Report To: - Assistant Director (Admin & 
+p.44  ctx=True  score=0.180  title='assistant manager (logistics)'
+  Position Title: - Assistant Manager (Logistics) Report To: - Deputy Manager (Inventory & Warehousing
+p.45  ctx=True  score=0.180  title='assistant manager (stores)'
+  Position Title: - Assistant Manager (Stores) Report To: - Deputy Manager (Inventory & Warehousing) W
+p.49  ctx=True  score=0.180  title='assistant manager (procurement)'
+  Position Title: - Assistant Manager (Procurement) Report To: - Head (Procurement & Contracting) Wing
+p.63  ctx=True  score=0.180  title='head monitoring (mis & gis)'
+  Position Title: - Head Monitoring (MIS & GIS) Report To: - ADG (Monitoring & Implementation) Wing: -
+p.66  ctx=True  score=0.180  title=''
+  Appointment:
+Appointment shall be made by Director General on the recommendation of contractual empl
+p.23  ctx=True  score=0.180  title=''
+  Appointment:
+Appointment shall be made by the Director General on the recommendation of the Contract
+p.39  ctx=True  score=0.180  title=''
+  Appointment:
+Appointment shall be made by Director General on the recommendations of the Contractual
+p.40  ctx=True  score=0.180  title='head (procurement & contracting)'
+  Position Title: - Head (Procurement & Contracting) Report To: - ADG (Admin & HR) Wing: - Administrat
+
+=== EVIDENCE AFTER POSITION FILTERING ===
+  Compiled Working Paper_2nd Meeting PERA  p.347
+  Annex H Contractual Employees SRs.pdf p.22
+  Compiled Working Paper_2nd Meeting PERA  p.366
+  Annex H Contractual Employees SRs.pdf p.47
+
+Full context length: 13625 chars

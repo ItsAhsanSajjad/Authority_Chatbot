@@ -1,0 +1,192 @@
+======================================================================
+TEST 1: URDU QUERIES → ENGLISH ANSWERS + CORRECT VALUES
+======================================================================
+
+  ✅ SSO ki salary kya hai → SPPP-5 (got SPPP-5)
+     Q: SSO ki salary kya hai
+     A: The salary for the System Support Officer (SSO) is SPPP-5. Additionally, any other benefits admissible to SPPP-5 as mentioned in Schedule-III will also apply.
+
+  ✅ SSO ki salary btao → SPPP-5 (got SPPP-5)
+     Q: SSO ki salary btao
+     A: The salary for the System Support Officer (SSO) is SPPP-5. Additionally, any other benefits admissible to SPPP-5 as mentioned in Schedule-III will also apply.
+
+  ✅ manager development ka pay scale kya hai → SPPP-3 (got SPPP-3)
+     Q: manager development ka pay scale kya hai
+     A: The pay scale for the position of Manager (Development) is SPPP-3. This includes any other benefits admissible to SPPP-3 as mentioned in Schedule-III.
+
+  ✅ manager development ki salary kitni hai → SPPP-3 (got SPPP-3)
+     Q: manager development ki salary kitni hai
+     A: The salary for the position of Manager (Development) is structured under the Special Pay Package PERA (SPPP-3), which amounts to **79,270**. Additionally, there are other benefits 
+
+  ✅ deputy director ki salary kya hai → BPS-18 (got BPS-18)
+     Q: deputy director ki salary kya hai
+     A: The salary for the position of Deputy Director (Implementation) is equivalent to BPS-18 + PERA Special Allowance or Deputation Allowance + Vehicle + any other benefit admissible to
+
+  ✅ CTO ki salary btao → SPPP-1 (got SPPP-1)
+     Q: CTO ki salary btao
+     A: The salary for the Chief Technology Officer (CTO) position is SPPP-1, along with any other benefits admissible to SPPP-1 as mentioned in Schedule-III.
+
+======================================================================
+TEST 2: ENGLISH QUERIES (regression check)
+======================================================================
+
+  ✅ SSO salary → SPPP-5 (got SPPP-5)
+     Q: SSO salary
+     A: The salary for the System Support Officer (SSO) is classified as SPPP-5. Additionally, any other benefits admissible to SPPP-5 as mentioned in Schedule-III will also apply.
+
+  ✅ manager development salary → SPPP-3 (got SPPP-3)
+     Q: manager development salary
+     A: The salary for the position of Manager (Development) is structured under the Special Pay Package PERA (SPPP-3). The details are as follows:
+
+- **Basic Pay**: 79,270
+- **Special All
+
+  ✅ deputy director salary → BPS-18 (got BPS-18)
+     Q: deputy director salary
+     A: The salary and benefits for the position of Deputy Director are equivalent to **BPS-18** plus a PERA Special Allowance or Deputation Allowance, a vehicle, and any other benefits ad
+
+  ✅ CTO salary → SPPP-1 (got SPPP-1)
+     Q: CTO salary
+     A: The salary for the Chief Technology Officer (CTO) position is SPPP-1, along with any other benefits admissible to SPPP-1 as mentioned in Schedule-III.
+
+  ✅ investigation officer salary → BPS-11 (got BPS-11)
+     Q: investigation officer salary
+     A: The salary and benefits for the position of Investigation Officer are equivalent to **BPS-11** along with a PERA Special Allowance or Deputation Allowance, plus any other benefits 
+
+  ✅ web developer salary → SPPP-4 (got SPPP-4)
+     Q: web developer salary
+     A: The salary for the position of Web & Software Developer is set at **SPPP-4**, along with any other benefits admissible to SPPP-4 as mentioned in Schedule-III.
+
+  ✅ DG salary → BS-20 (got BS-20)
+     Q: DG salary
+     A: The salary and benefits for the Director General of PERA are equivalent to **BS-20** + PERA Special Allowance + Vehicle + any other benefits admissible to this position.
+
+Note: Thi
+
+  ✅ senior sergeant salary → BPS-09 (got BPS-09)
+     Q: senior sergeant salary
+     A: The salary for the position of Senior Sergeant is equivalent to BPS-09, along with the PERA Special Allowance or Deputation Allowance, and any other benefits admissible to this pos
+
+  ✅ enforcement officer salary → BPS-16 (got BPS-16)
+     Q: enforcement officer salary
+     A: The salary for the position of Enforcement Officer is equivalent to BPS-16. Additionally, the position may include PERA Special Allowance or Deputation Allowance, along with any ot
+
+======================================================================
+TEST 3: NEW ABBREVIATIONS
+======================================================================
+
+  ✅ DD salary → BPS-18 (got BPS-18)
+     Q: DD salary
+     A: The salary and benefits for the position of Deputy Director (Finance) are equivalent to **BPS-18** + PERA Special Allowance or Deputation Allowance + Vehicle + any other benefit ad
+
+  ✅ DEO salary → got answer
+     Q: DEO salary
+     A: The salary for the position of Data Entry Operator (DEO) is equivalent to SPPP-2, along with any other benefits admissible to SPPP-2 as mentioned in Schedule-III.
+
+Note: This answe
+
+  ✅ IO salary → BPS-11 (got BPS-11)
+     Q: IO salary
+     A: The salary and benefits for the Investigation Officer are equivalent to **BPS-11**, along with the PERA Special Allowance or Deputation Allowance, and any other benefits admissible
+
+======================================================================
+TEST 4: FOLLOW-UP CONVERSATIONS
+======================================================================
+
+  Setup: Tell me about SSO → The **System Support Officer (SSO)** plays a crucial role in assisting the Sub D...
+
+  ✅ Follow-up: his salary? → has 'SPPP'
+     Q: his salary?
+     A: The salary for the **System Support Officer** is classified under **SPPP-5**. Additionally, the position may include any other benefits admissible to SPPP-5 as mentioned in Schedul
+
+  ✅ Follow-up: who does he report to? → has 'SDEO'
+     Q: who does he report to?
+     A: The **System Support Officer** reports to the **Sub Divisional Enforcement Officer (SDEO)** of the concerned Enforcement Station. This position is part of the Enforcement Station's
+
+  ✅ Follow-up: qualifications? → has 'education'
+     Q: qualifications?
+     A: The qualifications and experience required for the **System Support Officer** position are as follows:
+
+1. **Education**:
+ - 16 years of education, preferably in Computer Science, 
+
+======================================================================
+TEST 5: STANDALONE QUERY (not treated as follow-up)
+======================================================================
+
+  ✅ Fresh query: CTO salary → SPPP-1 (got SPPP-1)
+     Q: CTO salary
+     A: The salary for the Chief Technology Officer (CTO) position is SPPP-1, along with any other benefits admissible to SPPP-1 as mentioned in Schedule-III.
+
+  ✅ Fresh query: DG salary → BS-20 (got BS-20)
+     Q: DG salary
+     A: The salary and benefits for the Director General of PERA are equivalent to **BS-20** + PERA Special Allowance + Vehicle + any other benefits admissible to this position.
+
+Note: Thi
+
+======================================================================
+TEST 6: GENERAL QUERY REFUSAL
+======================================================================
+
+  ✅ Refused: what is HTML
+     Q: what is HTML
+     A: The question about HTML is outside PERA's scope. However, it is worth noting that HTML (HyperText Markup Language) is a standard markup language used for creating web pages. It str
+
+  ✅ Refused: explain CSS flexbox
+     Q: explain CSS flexbox
+     A: The question about CSS flexbox is outside PERA's scope. Please let me know if you have any questions related to PERA's regulations, structure, roles, operations, or policies.
+
+The 
+
+  ✅ Refused: how to make biryani
+     Q: how to make biryani
+     A: I'm sorry, but the question about making biryani is outside PERA's scope. If you have any questions related to the Punjab Enforcement and Regulatory Authority (PERA), feel free to 
+
+======================================================================
+TEST 7: CONSISTENCY (same query 3x)
+======================================================================
+
+  Q: SSO salary
+    Run 1: SPPP-5
+    Run 2: SPPP-5
+    Run 3: SPPP-5
+  ✅ Consistent: SSO salary → {'SPPP-5'}
+
+
+  Q: enforcement officer salary
+    Run 1: BPS-16
+    Run 2: BPS-16
+    Run 3: BPS-16
+  ✅ Consistent: enforcement officer salary → {'BPS-16'}
+
+
+======================================================================
+TEST 8: SHORT QUERIES
+======================================================================
+
+  ✅ Got answer for: salary?
+     Q: salary?
+     A: The salary structure at PERA is aligned with government-approved pay scales and includes various categories of employees:
+
+1. **Regular Employees (Permanent Staff)**: Governed by t
+
+  ✅ Got answer for: SSO?
+     Q: SSO?
+     A: The **System Support Officer** at the Punjab Enforcement and Regulatory Authority (PERA) plays a crucial role in assisting the Sub Divisional Enforcement Officer (SDEO) with variou
+
+  ✅ Got answer for: CTO?
+     Q: CTO?
+     A: The Chief Technology Officer (CTO) position at the Punjab Enforcement and Regulatory Authority (PERA) has the following details:
+
+### Purpose of the Position:
+The CTO is responsibl
+
+  ✅ Got answer for: pera?
+     Q: pera?
+     A: The Punjab Enforcement and Regulatory Authority (PERA) is an organization established to oversee and enforce regulations within Punjab. Its primary responsibilities include ensurin
+
+
+======================================================================
+OVERALL: 32/32 (100%)
+FAILURES: 0
+======================================================================

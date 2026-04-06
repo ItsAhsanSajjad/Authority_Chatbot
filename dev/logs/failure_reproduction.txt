@@ -1,0 +1,223 @@
+TEST 1: GENERAL/OUT-OF-DOMAIN QUERIES
+Expected: Should refuse or say 'outside PERA scope'
+======================================================================
+
+  ✅ REFUSED | Q: what is HTML
+    A: The question about HTML is outside PERA's scope.
+
+Note: This answer is derived from the relevant PERA provisions and is not stated as a single standalone clause in the documents.
+
+  ✅ REFUSED | Q: explain CSS flexbox
+    A: The question about CSS flexbox is outside PERA's scope. Please let me know if you have any questions related to PERA's regulations, structure, roles, operations, or policies.
+
+Note: This answer is der
+
+  ✅ REFUSED | Q: how to write Python code
+    A: Your question is outside PERA's scope.
+
+Note: This answer is derived from the relevant PERA provisions and is not stated as a single standalone clause in the documents.
+
+  ✅ REFUSED | Q: who is the president of Pakistan
+    A: The question is outside PERA's scope.
+
+  ✅ REFUSED | Q: capital of France
+    A: I'm sorry, I couldn't find any information about that in the PERA documents.
+
+  ✅ REFUSED | Q: what is machine learning
+    A: The question about machine learning is outside PERA's scope. Please let me know if you have any questions related to PERA's regulations, structure, roles, operations, or policies.
+
+  ✅ REFUSED | Q: how to make biryani
+    A: I'm sorry, but the question about making biryani is outside PERA's scope. If you have any questions related to PERA's regulations, structure, roles, operations, or policies, feel free to ask!
+
+  ✅ REFUSED | Q: tell me about climate change
+    A: I'm sorry, but questions about climate change are outside PERA's scope. If you have any questions related to PERA's regulations, structure, roles, operations, or policies, feel free to ask!
+
+Note: Thi
+
+
+TEST 2: QUERY PHRASING SENSITIVITY
+Expected: Same answer regardless of phrasing
+======================================================================
+
+  GROUP: SSO salary
+    Q: SSO salary
+    → SPPP-5 | The salary for the System Support Officer (SSO) is classified as SPPP-5, along with any other benefits admissible to SPPP-5 as mentioned in Schedule-I
+
+    Q: what is the salary of SSO
+    → SPPP-5 | The salary for the System Support Officer (SSO) is categorized under the Special Pay Package PERA (SPPP-5). The details are as follows:
+
+- **Basic Pay
+
+    Q: salary of system support officer
+    → SPPP-5 | The salary for the System Support Officer is categorized under the Special PERA Pay Package (SPPP) with a pay scale of **SPPP-5**.
+
+    Q: SSO ki salary kya hai
+    → SPPP-3 | System Support Officer (SSO) ki salary SPPP-3 hai, aur iske sath Schedule-III mein zikar shuda kisi bhi aur faida bhi milega.
+
+    Q: how much does SSO earn
+    → NO_VALUE | The System Support Officer (SSO) earns under the Special Pay Package PERA (SPPP) with the following details:
+
+- **Basic Pay**: 25,000
+- **PERA Special
+
+  RESULT: ❌ INCONSISTENT: {'SPPP-5', 'NO_VALUE', 'SPPP-3'}
+
+  GROUP: Manager Development salary
+    Q: manager development salary
+    → SPPP-3 | The salary for the position of Manager (Development) is classified under the SPPP-3 pay scale, along with any other benefits admissible to SPPP-3 as m
+
+    Q: salary of manager development
+    → SPPP-3 | The salary for the position of Manager (Development) is classified as **SPPP-3**, along with any other benefits admissible to SPPP-3 as mentioned in S
+
+    Q: what is manager development pay scale
+    → SPPP-3 | The pay scale for the position of Manager (Development) is classified under the Special Pay Package PERA (SPPP) as SPPP-3. The details for SPPP-3 are 
+
+    Q: manager development ka pay scale kya hai
+    → BPS-18 | Manager (Development) ka pay scale BPS-18 hai, saath hi PERA Special Allowance ya Deputation Allowance, vehicle, aur is position ke liye kisi bhi aur 
+
+  RESULT: ❌ INCONSISTENT: {'SPPP-3', 'BPS-18'}
+
+  GROUP: Deputy Director salary
+    Q: deputy director salary
+    → BPS-18 | The salary and benefits for the position of Deputy Director are equivalent to **BPS-18** plus a **PERA Special Allowance or Deputation Allowance**, a 
+
+    Q: what is the salary of deputy director
+    → BPS-18 | The salary of the Deputy Director positions at PERA is equivalent to **BPS-18** plus a **PERA Special Allowance or Deputation Allowance**, along with 
+
+    Q: pay scale of deputy director
+    → BPS-18 | The pay scale for the position of Deputy Director is equivalent to **BPS-18**. Additionally, it includes a PERA Special Allowance or Deputation Allowa
+
+  RESULT: ✅ CONSISTENT
+
+
+TEST 3: ANSWER CONSISTENCY (same query 3x)
+Expected: Same answer every time
+======================================================================
+
+  Q: SSO salary
+    Run 1: The salary for the System Support Officer (SSO) is classified as SPPP-5, along with any other benefits admissible to SPPP-5 as mentioned in Schedule-I
+    Run 2: The salary for the System Support Officer (SSO) is classified as SPPP-5, along with any other benefits admissible to SPPP-5 as mentioned in Schedule-I
+    Run 3: The salary for the System Support Officer (SSO) is classified as SPPP-5, along with any other benefits admissible to SPPP-5 as mentioned in Schedule-I
+  RESULT: ✅ CONSISTENT
+
+  Q: enforcement officer salary
+    Run 1: However, it is mentioned that the appointment is as explained in column 5 of Schedule-II, which may contain relevant details regarding the salary stru
+    Run 2: However, the appointment details mention that it is explained in column 5 of Schedule-II, which may contain relevant information regarding the salary 
+    Run 3: 
+  RESULT: ❌ INCONSISTENT
+
+  Q: what is PERA
+    Run 1: The Punjab Enforcement and Regulatory Authority (PERA) is an organization committed to enforcing laws and regulations in Punjab. It operates with core
+    Run 2: The Punjab Enforcement and Regulatory Authority (PERA) is an organization that focuses on enforcing laws and regulations within Punjab. It is committe
+    Run 3: The Punjab Enforcement and Regulatory Authority (PERA) is an organization that focuses on enforcing laws and regulations within Punjab. It is committe
+  RESULT: ✅ CONSISTENT
+
+
+TEST 4: FOLLOW-UP / CONVERSATIONAL FLOW
+Expected: Pronouns resolve correctly
+======================================================================
+
+  SESSION: Tell me about SSO
+    Q1: Tell me about SSO
+    A1: The **System Support Officer (SSO)** at the Punjab Enforcement and Regulatory Authority (PERA) plays a crucial role in assisting the Sub Divisional En
+
+    ✅ Q: his salary?
+    A: The salary for the **System Support Officer** is classified under **SPPP-5**. Additionally, the officer is entitled to any other benefits admissible to SPPP-5 as mentioned in Schedule-III.
+
+    ✅ Q: who does he report to?
+    A: The **System Support Officer** reports to the **Sub Divisional Enforcement Officer (SDEO)** of the concerned Enforcement Station.
+
+    ✅ Q: what qualifications are needed?
+    A: The qualifications needed for the **System Support Officer** position are:
+
+1. **Education**: 16 years of education, preferably in Computer Science, Information Technology, Software Engineering, or an
+
+  SESSION: Tell me about Manager Development
+    Q1: Tell me about Manager Development
+    A1: ### Manager (Development)
+
+**Report To:** Chief Technology Officer (CTO)
+**Wing:** IT & Communication
+
+#### Purpose of the Position:
+The Manager (Deve
+
+    ✅ Q: his salary?
+    A: The salary for the Manager (Development) position is classified under **SPPP-3**, along with any other benefits admissible to SPPP-3 as mentioned in Schedule-III.
+
+    ✅ Q: reporting structure?
+    A: The Manager (Development) reports to the **Chief Technology Officer (CTO)**.
+
+  SESSION: enforcement officer
+    Q1: enforcement officer
+    A1: ### Enforcement Officer
+
+**Reports To:** Sub-Divisional Enforcement Officer
+
+**Purpose of the Position:**
+To perform all enforcement and regulatory fi
+
+    ✅ Q: salary?
+    A: The salary and benefits for the Enforcement Officer position are equivalent to BPS-16. This includes the PERA Special Allowance or Deputation Allowance, along with any other benefits admissible to thi
+
+    ✅ Q: duties?
+    A: ### Duties of the Enforcement Officer
+
+1. **Execute Orders:** Carry out orders from the Sub-Divisional Enforcement Officers (SDEOs) for the enforcement of scheduled laws.
+2. **Strategy Development:** 
+
+
+TEST 5: BOARD STRUCTURE / ORGANIZATIONAL
+======================================================================
+
+  ✅ Q: what is the board structure of PERA
+    A: However, it mentions that the "Directorate General" is responsible for the management and supervision of different wings of PERA under the Director General, PERA. For specific details regarding the board structure, you may need to refer to additional
+
+  ✅ Q: who are the members of PERA authority
+    A: The members of the Punjab Enforcement and Regulatory Authority (PERA) are as follows:
+
+1. Chief Minister, Punjab - Chairperson
+2. Chief Secretary, Punjab - Vice Chairperson
+3. Senior Member, Board of Revenue, Punjab - Member
+4. Secretary, Government 
+
+  ✅ Q: how is PERA governed
+    A: PERA is governed by the Punjab Enforcement and Regulation Act, 2024, along with the Punjab Enforcement and Regulatory Authority Rules, 2024, and the Punjab Enforcement and Regulatory Authority (Appointment and Conditions of Service) Regulations, 2025
+
+  ✅ Q: PERA organizational hierarchy
+    A: The organizational structure of the Punjab Enforcement and Regulatory Authority (PERA) includes the following key positions:
+
+1. **Director General** - BS-19/20
+2. **Director Finance** - BS-19
+3. **Director Administration & HR** - BS-19
+4. **Director
+
+
+TEST 6: SHORT/AMBIGUOUS QUERIES
+======================================================================
+
+  ✅ Q: pera?
+    A: Your question is outside PERA's scope. If you have specific inquiries about the Punjab Enforcement and Regulatory Authority (PERA), please feel free to ask!
+
+Note: This answer is derived from the rele
+
+  ✅ Q: salary?
+    A: PERA's salary structure is aligned with government-approved pay scales and includes various categories of employees:
+
+1. **Regular Employees (Permanent Staff)**: Governed by the Basic Pay Scales (BPS)
+
+  ✅ Q: SSO?
+    A: The **System Support Officer (SSO)** is responsible for assisting the Sub Divisional Enforcement Officer (SDEO) with various functions at Enforcement Stations. The role includes providing comprehensiv
+
+  ✅ Q: manager?
+    A: ### Position Title: Manager Monitoring
+
+**Report To:** Head Monitoring (MIS & GIS)
+**Wing:** Monitoring & Implementation
+
+#### Purpose of the Position:
+The Manager Monitoring is responsible for assist
+
+  ✅ Q: CTO?
+    A: The Chief Technology Officer (CTO) at PERA is responsible for providing technical leadership to the IT team and ensuring IT-enabled solutions for all functions of PERA, including the digitization of p
+

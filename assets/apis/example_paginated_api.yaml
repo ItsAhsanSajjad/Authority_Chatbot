@@ -1,0 +1,72 @@
+# ──────────────────────────────────────────────────────────────
+# Example: Paginated API Source (offset-based)
+# Demonstrates pagination, API-key auth, and field filtering.
+# ──────────────────────────────────────────────────────────────
+
+source_id: regulations_api
+source_type: api
+display_name: "PERA Regulations API"
+enabled: false  # Disabled — example.gov.pk does not exist
+
+fetch:
+  method: GET
+  url: https://example.gov.pk/api/regulations
+  headers:
+    Accept: application/json
+    X-Client-ID: pera-ai-ingest
+  timeout_seconds: 45
+  retry_count: 3
+  retry_backoff_seconds: 5
+  pagination:
+    type: offset          # offset | cursor | page
+    page_size: 100
+    page_param: offset    # query parameter name for offset
+    size_param: limit     # query parameter name for page size
+    total_field: meta.total_count  # JSON path to total record count
+
+auth:
+  type: api_key_env
+  key_env: REGULATIONS_API_KEY      # reads from environment variable
+  key_header: X-API-Key             # header name to send the key in
+
+sync:
+  interval_minutes: 60
+  full_refresh_every_hours: 12
+  delete_missing_records: false
+
+normalization:
+  root_selector: data.regulations
+  record_id_field: regulation_id
+  record_type: regulation
+  include_fields:
+    - regulation_id
+    - title
+    - category
+    - effective_date
+    - summary
+    - full_text
+    - issuing_authority
+    - status
+  exclude_fields:
+    - internal_notes
+    - _metadata
+  nested_strategy: flatten
+  text_template: |
+    Regulation: {title}
+    ID: {regulation_id}
+    Category: {category}
+    Effective Date: {effective_date}
+    Issuing Authority: {issuing_authority}
+    Status: {status}
+
+    Summary: {summary}
+
+    Full Text:
+    {full_text}
+
+indexing:
+  authority: 3
+  tags:
+    - pera
+    - regulations
+    - legal

@@ -1,0 +1,23 @@
+adg -> Additional Director General
+cto -> Chief Technology Officer
+ddg -> Deputy Director General
+dg -> Director General
+eo -> Enforcement Officer
+faqs -> Frequently Asked Questions
+gli -> Group Life Insurance
+hr -> Human Resources
+io -> Investigation Officer
+it -> Information Technology
+jd -> Job Description
+mgr -> Manager
+schedulei -> Organizational Structure
+scheduleii -> Appointment & Conditions of Service
+scheduleiii -> Special Pay Package PERA (SPPP)
+scheduleiv -> Rules / Regulations Adopted by the Authority
+schedulev -> Transfer and Posting
+schedulevi -> Special Allowance and Benefits
+sdeo -> Sub-Divisional Enforcement Officer
+sppp -> Special Pay Package PERA
+sr -> Service Rules
+sso -> System Support Officer
+tor -> Terms of Reference

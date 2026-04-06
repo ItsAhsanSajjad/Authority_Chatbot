@@ -1,0 +1,172 @@
+=== EVIDENCE THAT REACHES THE LLM ===
+
+<evidence doc="Compiled Working Paper_2nd Meeting PERA 03-07-2025.pdf" page="347" eid="9b261c345f">
+Position Title: - Manager (Development) Report To: - Chief Technology Officer (CTO) Wing: - IT & Communication Purpose of the Position:
+Responsible for maximizing the productivity / performance of IT Applications / Custom Developed Software / Web Portals by directing the daily, weekly, and monthly activities. To provide leadership, motivation, training, and development of the workforce; process and procedure development to achieve operational excellence. Areas of Responsibilities:
+ To create and document a conceptual and detailed design and write a code based on conceptual description of the business logic.  To design and development of database components as per requirement of software.  To compile and write documentation of software development and subsequent revisions inserting comments in the coded instructions.  To facilitate operational and technical personnel to clarify program inten t, identify problems, suggest, and implement changes.  To assist Business, Operational & Financial teams to define and resolve problems in running software applications/programs as per the software requirement specification.  To maintain confidentiality with regards to the information being processed, stored or accessed.  To test the developed application/component in the UAT/Test environments and deployed on Production.  Prepares and installs solutions by determining and designing system specifications, standards, and programming.  Maintenance of the systems once they are up and running.  Work on Special Projects/Assignments as and when needed by the organization.  Partner with cross-functional teams (UX, Data, Security) for seamless integration.  Implement DevOps practices (CI/CD, automation, monitoring).  Ensure scalability, security, and performance of software solutions.  Collaborate with Product Management, QA, DevOps, and other stakeholders to align priorities.  Ensure adherence to Agile/Scrum or other development methodologies.  Any other duty / assignment assigned by the Sr. Manager. Qualification and Experience:
+i Bachelor’s degree (Hons) in IT, Computer Sciences or Software Engineering or any other
+relevant / | similar degree from a recognized University; and
+ 5 years’ post qualification experience in the relevant field including at least four years’ experience in public sector along with 2 years ’ experience in Application Development Operations, System Integrations, Business Dashboards, Business Intelligence (ETL to Report Designing), Databases Administration. Note: Experience in private entities shall be accepted if such entity is registered with SECP, Registrar of Firms or any other Public Sector Regulatory Authority. Competencies & Personal Attributes:
+ Dot Net Core, MVC Entity Framework, SQL Server, Rest API, Angular JS / + AJAX, Bootstrap, Power BI, C#, WCF/REST services, multi-Threading.  Work on elements of SDLC life cycle (Build, design, development, deployment)  Experience of Microsoft Azure and other cloud services.  Experience in writing backend components and Restful APIs.  Develop technical interfaces, specifications, and architecture.  Third Party Components Telerik / Dev Express / Crystal Report / RDLC.  Strong knowledge of API lifecycle management platforms.  Good command on Microsoft SQL Server stored procedure, views, Functions, database ERP architecture, query optimization.  Knowledge of technologies like Node JS, React JS, Mongo DB Appointment:
+</evidence>
+
+<evidence doc="Annex H Contractual Employees SRs.pdf" page="22" eid="17464089b5">
+Position Title: - Manager (Development) Report To: - Chief Technology Officer (CTO) Wing: - IT & Communications Purpose of the Position:
+Responsible for maximizing the productivity / performance of IT Applications / Custom Developed Software / Web Portals by directing the daily, weekly, and monthly activities. To provide leadership, motivation, training, and development of the workforce; pr ocess and procedure development to achieve operational excellence. Areas of Responsibilities:
+
+• To create and document a conceptual and detailed design and write a code based on
+
+conceptual description of the business logic.
+
+• To design and development of database components as per requirement of software.
+• To compile and write documentation of software development and subsequent revisions
+
+inserting comments in the coded instructions.
+
+• To facilitate operational and technical personnel to clarify program intent, identify problems,
+
+suggest, and implement changes.
+
+• To assist Business, Operational & Financial teams to define and resolve problems in running
+
+software applications/programs as per the software requirement specification.
+
+• To maintain confidentiality with regards to the information being processed, stored, or
+
+accessed.
+
+• To test the developed application/component in the UAT/Test environments and deployed on
+
+Production.
+
+• Prepares and installs solutions by determining and designing system specifications, standards,
+
+and programming.
+
+• Maintenance of the systems once they are up and running.
+• Work on Special Projects/Assignments as and when needed by the organization.
+• Partner with cross-functional teams (UX, Data, Security) for seamless integration.
+• Implement DevOps practices (CI/CD, automation, monitoring).
+• Ensure scalability, security, and performance of software solutions.
+• Collaborate with Product Management, QA, DevOps, and other stakeholders to align priorities.
+• Ensure adherence to Agile/Scrum or other development methodologies.
+• Any other duty / assignment assigned by the Sr. Manager.
+
+Qualification and Experience:
+i Bachelor’s degree (Hons) in IT, Computer Sciences or Software Engineering or any other
+relevant / | similar degree from a recognized University; and
+
+• 5 years’ post qualification experience in the relevant field including at least four years’
+
+experience in public sector along with 2 years’ experience in Application Development Operations, System Integrations, Business Dashboards, Business Intelligence (ETL to Report Designing), Databases Administration. Note: Experience in private entities shall be accepted if such entity is registered with SECP, Registrar of Firms or any other Public Sector Regulatory Authority. Competencies & Personal Attributes:
+
+• Dot Net Core, MVC Entity Framework, SQL Server, Rest API, Angular JS / + AJAX, Bootstrap,
+
+Power BI, C#, WCF/REST services, multi-Threading.
+
+• Work on elements of SDLC life cycle (Build, design, development, deployment)
+• Experience of Microsoft Azure and other cloud services.
+• Experience in writing backend components and Restful APIs.
+• Develop technical interfaces, specifications, and architecture.
+• Third Party Components Telerik / Dev Express / Crystal Report / RDLC.
+• Strong knowledge of API lifecycle management platforms.
+• Good command on Microsoft SQL Server stored procedure, views, Functions, database ERP
+
+architecture, query optimization.
+
+• Knowledge of technologies like Node JS, React JS, Mongo DB
+</evidence>
+
+<evidence doc="Compiled Working Paper_2nd Meeting PERA 03-07-2025.pdf" page="366" eid="2a806bdf14">
+Position Title: - Deputy Manager HR Report To: - Assistant Director Admin. & HR Wing: - Administration & HR Purpose of the Position:
+The Deputy Manager – Human Resources plays a critical role in supporting the Assistant Director (Admin. & HR) in executing core HR functions. This includes recruitment, employee relations, performance management, regulatory compliance, and day -to-day HR operations. The incumbent contributes to the effective implementation of HR policies, fosters a positive organizational culture, and supports strategic HR initiatives to enhance employee engagement and organizational efficiency. Areas of Responsibilities:
+ Assist in managing the recruitment process including job postings, screening, interviews, and offer rollouts.  Maintain employee personnel files and ensure timely onboarding  Support implementation of attendance management systems and generate daily and monthly attendance reports.  Maintain accurate records of leave, time-offs, and payroll inputs.  Update and maintain the Human Resource Information Management System (HRMIS).  Assist in identifying training needs and preparing learning and development (L&D) plans.  Coordinate capacity-building programs and monitor participation and outcomes.  Support the implementation and oversight of the pay structure and employee benefits program.  Address employee grievances, and disciplinary issues in line with organizational policies.  Conduct exit interviews and analyze turnover trends for corrective actions.  Organize employee engagement initiatives such as team-building and recognition events.  Assist in implementing performance appraisal systems (e.g., KPIs/OKRs).  Track performance data, maintain feedback records, and support employee development plans.  Ensure compliance with applicable labor laws and internal HR policies.  Assist in reviewing and updating HR policies, manuals, and SOPs  Prepare periodic HR reports including attrition analysis, hiring metrics etc  Perform any other duties assigned by the competent authority. Qualification and Experience:
+i BS/BSc/Master’s degree in Business Administration , Human Resource Management or equivalent (16 years education) from an HEC recognized University; and ii 3 years’ post qualification experience in the relevant field including at least two years’ experience in public sector. Note: Experience in private entities shall be accepted if such entity is registered with SECP, Registrar of Firms or any other Public Sector Regulatory Authority. Competencies & Personal Attributes:
+ Presentation skills and report writing.  Strong understanding of HR policies, labor laws, and modern HR practices.  Must possess thorough understanding of procedures related to contractual appointments.  Should have proficiency in the use of IT  Integrity and empathy  Conflict management skills  Excellent communication skills, i.e. written and verbal Appointment:
+Appointment shall be made by Director General the recommendation s of the C ontractual Employment Committee. Salary and Benefits:
+SPPP-4 + any other benefit admissible to SPPP-4 as mentioned in Schedule-III
+</evidence>
+
+<evidence doc="Annex H Contractual Employees SRs.pdf" page="47" eid="a6802bf017">
+Position Title: - Assistant Manager (Talent Acquisition) Report To: - Deputy Manager (HR & Talent Acquisition) Wing: - Administration & HR Purpose of the Position:
+The Assistant Manager (Talent Acquisition ) supports the Deputy Manager (HR & Talent Acquisition) in the execution of talent acquisition and organizational development functions. Key responsibilities include assisting with recruitment and onboarding, driving talent management initiatives, organizational development programs, and supporting HR operations to enhance workforce capability and employee engagement. Areas of Responsibilities:
+
+• Assist the recruitment and onboarding process for new hires, ensuring timely completion of
+
+documentation, interviews, and induction formalities.
+
+• Support the Manager Talent Acquisition in managing and updating recruitment records,
+
+candidate databases, and talent pipelines.
+
+• Provide administrative support in day-to-day talent acquisition activities such as job postings,
+
+screening resumes, coordinating interviews, and liaising with recruitment agencies.
+
+• Support organizational development initiatives including training needs analysis, employee
+
+development programs, and succession planning.
+
+• Coordinate with departments to align recruitment strategies with organizational goals and
+
+workforce planning.
+
+• Maintain confidentiality of candidate and employee data and ensure adherence to
+
+organizational policies and legal requirements in recruitment and development processes.
+
+• Assist in planning, organizing, and executing employee engagement activities, team -building
+
+sessions, and cultural initiatives.
+
+• Assist in drafting and updating policies, procedures, and manuals related to talent acquisition
+
+and organizational development.
+
+• Respond to queries related to recruitment processes and employee development initiatives
+
+and escalate complex matters to Talent Acquisition Specialist.
+
+• Perform any other related tasks assigned by the Manager Talent Acquisition or competent
+
+authority. Qualification and Experience:
+i BS/BSc/Master’s degree in Human Resource Management, Business Administration, Public Administration, Management Sciences (Admin or Finance) (16 years’ education) from a recognized university. ii At least 2 years of relevant experience required. Note: Experience in private entities shall be accepted if such entity is registered with SECP, Registrar of Firms or any other Regulatory Authority. Competencies & Personal Attributes:
+
+• Strong presentation, report writing, and interpersonal skills.
+• In-depth knowledge of talent acquisition strategies, recruitment best practices, and
+
+organizational development methods.
+
+• Proficient understanding of HR policies, labor laws, and modern HR technologies related to
+
+recruitment and development.
+
+• Proficient in the use of Microsoft Office
+• Integrity, empathy, and ability to handle confidential information sensitively.
+
+Appointment:
+Appointment shall be made by Director General on the recommendation of Contractual Employment Committee-I. Salary and Benefits:
+SPPP-5 Pay Scale + any other benefit admissible to SPPP-5 as mentioned in Schedule-III
+</evidence>
+
+=== RAW EVIDENCE SUMMARY ===
+
+Doc: Compiled Working Paper_2nd Meeting PERA 03-07-2025.pdf (max_score: 0.407)
+  p.347 score=0.422 blend=0.407 title='Manager (Development)' ctx=False
+  p.366 score=0.395 blend=0.407 title='Deputy Manager HR' ctx=False
+  p.390 score=0.388 blend=0.403 title='Assistant Manager Monitoring' ctx=False
+  p.352 score=0.378 blend=0.396 title='Assistant Manager (Network)' ctx=False
+  p.354 score=0.375 blend=0.394 title='Web & Software Developer' ctx=False
+  p.355 score=0.374 blend=0.393 title='Android Developer' ctx=False
+  p.396 score=0.370 blend=0.391 title='Deputy Manager Training' ctx=False
+  p.353 score=0.369 blend=0.390 title='Assistant Manager (IT Infrastructure)' ctx=False
+
+Doc: Annex H Contractual Employees SRs.pdf (max_score: 0.404)
+  p.47 score=0.391 blend=0.404 title='Assistant Manager (Talent Acquisition)' ctx=False
+  p.42 score=0.389 blend=0.403 title='Deputy Manager (HR)' ctx=False
+  p.41 score=0.388 blend=0.402 title='Manager (HR & Talent Acquisition)' ctx=False
+  p.22 score=0.412 blend=0.401 title='Manager (Development)' ctx=False
+  p.69 score=0.385 blend=0.400 title='Assistant Manager (Monitoring)' ctx=False
+  p.27 score=0.377 blend=0.395 title='Assistant Manager (Network)' ctx=False
+  p.30 score=0.376 blend=0.394 title='Android Developer' ctx=False
+  p.28 score=0.371 blend=0.391 title='Assistant Manager (IT Infrastructure)' ctx=False

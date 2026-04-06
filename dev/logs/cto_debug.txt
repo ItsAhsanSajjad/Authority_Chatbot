@@ -1,0 +1,220 @@
+
+--- Page 346 ---
+Page 20 of 75 
+ 
+Schedule-II 
+Terms and Reference for Contractual Employment 
+Position Title: - Chief Technology Officer (CTO) 
+Report To: -  Director General, PERA 
+Wing: -  IT & Communication 
+Purpose of the Position:  
+CTO shall be responsible for providing technical leadership to the team of IT professionals.  He shall 
+assist the Director General in ensuring the IT -enabled solutions for all functions of PERA including 
+digitization of processes at the Headquarters and Enforcement Stations level. 
+Areas of Responsibilities:  
+ Lead the IT & Communication Wing of PERA and responsible for development, deployment, 
+upgradation, upscaling and troubleshooting of all IT-related technical applications  / software 
+products. 
+ Monitoring deliverables of software development of the projects by managing development 
+lifecycle. 
+ Responsible for all the activities of the software development team to ensure timely delivery 
+and ensure they adhere to development international standards. 
+ Monitor changes in the technology sector to discover ways organizations can improve and 
+develop IT Infrastructure. 
+ Research new technologies to strengthen the organization responsible for technology delivery. 
+ Provide technical leadership to the team of professionals for Information Technology projects, 
+infrastructure and data & cyber security to prevent security breaches and keep information 
+confidential. 
+ Develop, monitor and enhance an information security management framework. 
+ Plan and direct the implementation of new IT infrastructure. 
+ Identify areas and ways through which organization's technological assets can be improved. 
+ Development & Management of MIS & GIS functions and its monitoring dashboards. 
+ Ensure smooth electronic communication (connectivity and bandwidth) at multiple Government 
+departments.  
+Qualification and Experience: 
+i MS or MPhi l. (First Division) in Computer Science , Software Engineering  or Information 
+Technology from a recognized University; and 
+ii 10 years’ post qualification experience in the relevant field including at least four years’ 
+experience in public sector. 
+OR 
+i Master’s degree or BS (First Division) in Computer Science , Software Engineering  or 
+Information Technology from a recognized University; and 
+ii 12 years’ post qualification experience in the  relevant field including at least five years’ 
+experience in public sector.  
+Note: Experience in private entities shall be accepted if such entity is registered with SECP, 
+Registrar of Firms or any other Public Sector Regulatory Authority. 
+Competencies & Personal Attributes: 
+ Strong leadership, team building and problem-solving abilities 
+ Inquisitive and detailed oriented with strong analytical skills  
+ Excellent communication skills, i.e. written and verbal 
+Appointing Authority: 
+Appointment shall be made by Director General on the recommendation s of the Contractual 
+Employment Committee.  
+Salary and Benefits: 
+SPPP-1 + any other benefit admissible to SPPP-1 as mentioned in Schedule-III.  
+--- Page 347 ---
+Page 21 of 75 
+ 
+Position Title: - Manager (Development) 
+Report To: -  Chief Technology Officer (CTO) 
+Wing: -  IT & Communication  
+Purpose of the Position:  
+Responsible for maximizing the productivity / performance of IT Applications / Custom Developed 
+Software / Web Portals by directing the daily, weekly, and monthly activities. To provide leadership, 
+motivation, training, and development of the workforce; process and procedure development to 
+achieve operational excellence. 
+Areas of Responsibilities:  
+ To create and document a conceptual and detailed design and write a code based on 
+conceptual description of the business logic. 
+ To design and development of database components as per requirement of software. 
+ To compile and write documentation of software development and subsequent revisions 
+inserting comments in the coded instructions. 
+ To facilitate operational and technical personnel to clarify program inten t, identify problems, 
+suggest, and implement changes. 
+ To assist Business, Operational & Financial teams to define and resolve problems in running 
+software applications/programs as per the software requirement specification. 
+ To maintain confidentiality with  regards to the information being processed, stored or 
+accessed. 
+ To test the developed application/component in the UAT/Test environments and deployed on 
+Production. 
+ Prepares and installs solutions by determining and designing system specifications, standards, 
+and programming. 
+ Maintenance of the systems once they are up and running. 
+ Work on Special Projects/Assignments as and when needed by the organization.  
+ Partner with cross-functional teams (UX, Data, Security) for seamless integration. 
+ Implement DevOps practices (CI/CD, automation, monitoring). 
+ Ensure scalability, security, and performance of software solutions. 
+ Collaborate with Product Management, QA, DevOps, and other stakeholders to align priorities. 
+ Ensure adherence to Agile/Scrum or other development methodologies. 
+ Any other duty / assignment assigned by the Sr. Manager. 
+Qualification and Experience: 
+i Bachelor’s degree (Hons) in IT, Computer Sciences or Software Engineering or any  other 
+relevant /   similar degree from a recognized University; and 
+ 5 years’ post qualification experience in the relevant field including at least four years’ 
+experience in public sector along with 2 years ’ experience  in Application Development 
+Operations, System Integrations, Business Dashboards, Business Intelligence (ETL to Report 
+Designing), Databases Administration.  
+Note: Experience in private entities shall be accepted if such entity is registered with SECP, 
+Registrar of Firms or any other Public Sector Regulatory Authority. 
+Competencies & Personal Attributes: 
+ Dot Net Core, MVC Entity Framework, SQL Server, Rest API, Angular JS / + AJAX, Bootstrap, 
+Power BI, C#, WCF/REST services, multi-Threading. 
+ Work on elements of SDLC life cycle (Build, design, development, deployment) 
+ Experience of Microsoft Azure and other cloud services. 
+ Experience in writing backend components and Restful APIs. 
+ Develop technical interfaces, specifications, and architecture. 
+ Third Party Components Telerik / Dev Express / Crystal Report / RDLC. 
+ Strong knowledge of API lifecycle management platforms. 
+ Good command on Microsoft SQL Server stored procedure, views, Functions, database ERP 
+architecture, query optimization. 
+ Knowledge of technologies like Node JS, React JS, Mongo DB 
+Appointment: 
+--- Page 349 ---
+Page 23 of 75 
+ 
+Position Title: - Manager (Infrastructure & Networks) 
+Report To: -  Chief Technology Officer (CTO) 
+Wing: -  IT & Communication 
+Purpose of the Position:  
+Responsible for maximizing the performance of IT infrastructure by directing the daily, weekly, and 
+monthly activities. To provide leadership, motivation, training, and development of the workforce; 
+process and procedure development to achieve operational excellence. Provide event driven 
+operations monitoring, performance tracking and auditing capability. 
+Areas of Responsibilities:  
+ Perform various IT Infrastructure Administration tasks including the following areas of 
+responsibility:  
+ Data Centre Management 
+ Core Network Infrastructure  
+ Firewalls, Routers and Switches  
+ Implement policies and procedures to meet service expectations and quality for Operations 
+users through Firewall/Domain Controller. 
+ Review the IT infrastructure to meet upcoming needs and expansion plans of the company. 
+ Monitor network performance and optimize the network for optimal speed and availability. 
+ Servers Management and their uptime assurance. 
+ Deploy, configure, and update Domain Controller Group Policies. 
+ Deploy, configure, and upgrade network software’s, such as enterprise antivirus or other 
+remote support programs. 
+ Installation of all types of updates like Windows 11, Windows Server 2016/2019/2022, Antivirus 
+and Office 365 & MS Exchange Management. 
+ Server and Network Equipment Management. 
+ Plan, coordinate, and implement network security measures to protect IT Infrastructure from 
+Internal/External attacks. 
+ Responsible for Implementation of Policies, Procedures and SOPs. 
+ Provide a high level of Technical Support to all Users. 
+ Vendor Management with Procurement and Finance for their payments. 
+ Procurement of IT Equipment & Services through Public Tenders with contracts. 
+ Respond to Trouble tickets raised by Help Desk and is responsible for the resolution.  
+ All IT Infra & systems admin istration functions like User Access control, Patch management, 
+Virus Management, Spam Management, etc. 
+ Coordination with Principals / Vendors on all IT related purchases including laying.  
+ Manage staff and operations of data center 
+Qualification and Experience: 
+i Bachelor’s degree (Hons) in IT, Computer Sciences , Telecommunication  or Software 
+Engineering or any other relevant /   similar degree from a recognized university; and 
+ii 5 years’ post qualification relevant experience including at least 3 years’ experience in public 
+sector. 
+Note: Experience in private entities shall be accepted if such entity is registered with SECP, 
+Registrar of Firms or any other Public Sector Regulatory Authority. 
+Competencies & Personal Attributes: 
+ A hands-on management approach that encourages change and creative problem-solving. 
+ Ability to manage and maintain the operation of the data center and IT Infrastructure. 
+ Ability to work well in a fast-paced and high-intensity environment. 
+ Strong knowledge of Key Account Management. 
+ Strong relationship-building skills. 
+ Ability to groom. 
+ Strong planning, execution, monitoring, and administrative skills. 
+ Good knowledge of market trends of Technology. 
+--- Page 351 ---
+Page 25 of 75 
+ 
+Position Title: - Manager (Digital Strategy & Communication) 
+Report To: -  Chief Technology Officer 
+Wing: -  IT & Communication 
+Purpose of the Position:  
+To assist Chief Technology Officer in designing and implementing the communication strategy of PERA 
+through electronic, print and social media. To assist DG in making a well -crafted media strategy to 
+ensure advertising and marketing efforts reach the right target audience. 
+ 
+Areas of Responsibilities:  
+ Will design and implement awareness campaigns related to PERA 
+ To devise a launching media strategy for PERA 
+ Will carry out product designing and marketing for PERA 
+ To create awareness among masses regarding PERA’s procedures and scheduled laws 
+ To highlight PERA’s defined objective to light 
+ To utilise various tools including Press conferences, press releases, short films, short 
+documentaries, streamers and content for all types of media 
+ Media management and image building for PERA 
+ Any other duties and responsibilities as per the directions of the Competent Authority. 
+Qualification and Experience: 
+i Masters in Mass Communication, Marketing, Public Relations, Graphics Designing, 
+Computer Sciences, Advertising, or equivalent from a recognized University. 
+ii Continuous 20-25 years of production career and experience in mainstream TV and social 
+media. Experienced in open and closed-circuit communication and impact. Preferably must 
+have teaching experience in mainstream Universities. 
+ Note: Experience in private entities shall be accepted if such entity is registered with SECP, 
+Registrar of Firms or any other Public Sector Regulatory Authority. 
+Competencies & Personal Attributes: 
+ Expert in Ideation and proposal and brand activation 
+ Must have knowledge of launching tools 
+ Ideation expert in designing campaigns, using various tools 
+ Expert in Production Design and campaigns 
+ He must be Expert in core production,  
+ He must have thorough understanding of opinion making and brain washing 
+ Possess ample diversified experience in pre and postproduction processes in various genres. 
+ Expert in communication, persuasion, opinion making and Transformation 
+ Have ample experience and knowledge of tools of communication and trends on social media 
+ He must possess technical knowledge of lighting, camera and postproduction and background 
+scores. 
+ Must have though understanding of objective of scheduled laws of PERA. 
+ Must know all Ins and Outs of Production process 
+ Must claim to have hands on pulse of Target masses 
+ He mu st have close contact with news and entertainment celebrities and social media 
+influencers 
+Appointment: 
+Appointment shall be made by Director General on the recommendation of Contractual Employment 
+Committee.  
+Salary and Benefits: 
+SPPP-3 + any other benefit admissible to SPPP-3 as mentioned in Schedule-III 
+ 
+ 
+ 

@@ -1,0 +1,15 @@
+Debug extraction for: assets/data/Compiled Working Paper_2nd Meeting PERA 03-07-2025.pdf
+Extracting units...
+Extracted 464 units (pages).
+First unit text length: 2214
+First unit text preview: Annexure B (Bill as recommended by Standing Committee on Services and General Administration) A Bill to provide for establishment of the Punjab Enforcement and Regulatory Authority and to prescribe pr
+Chunking units...
+Generated 470 chunks.
+First chunk text: Annexure B (Bill as recommended by Standing Committee on Services and General Administration) A Bill to provide for establishment of the Punjab Enforcement and Regulatory Authority and to prescribe pr
+Searching for 'Chief Technology Officer' in chunks...
+Found CTO in chunk 153 (ID N/A):
+Organizational Structure Director General /BS-19/20 (1) Dir. Finance BS-19 (08) Dir. Admin. & HR BS-19 (17) Dir. Personnel BS-19 (08) Chief Technology Officer SPPP-1 (15) Executive Assistant (PA) /BS-16 (1) Dir. Monitoring & Implement. BS-19 (11) Audit Officer BS-17 (02) Head Count
+
+• Total - 75
+
+Head Legal & Prosecution SPPP-2 (4) CPS for PERA HQs Chief Training Officer SPPP-1 (8)

@@ -1,0 +1,93 @@
+============================================================
+QUERY: SSO salary
+============================================================
+
+1. EXPANDED: System Support Officer salary
+2. TARGET ROLE (original): ''
+   TARGET ROLE (expanded): 'system support officer'
+3. RETRIEVAL: 3 doc groups
+   Doc 1: Compiled Working Paper_2nd Meeting PERA  (12 hits)
+     Hit 1: p.? pos='Assistant Director (Administration & HR)' text='Position Title: - Assistant Director (Administration & HR) Reports To: | Deputy ...'
+     Hit 2: p.? pos='| Sergeant' text='Position Title: | Sergeant Reports To: SDEO, EO, IO and Senior Sergeant Purpose ...'
+     Hit 3: p.? pos='System Support Officer' text='Position Title: - System Support Officer Report To: - Sub Divisional Enforcement...'
+     Hit 4: p.? pos='' text='Post Name BS Strength Per ES Total No. ESs Total Strength Secretary District Boa...'
+     Hit 5: p.? pos='Assistant Manager IT & LMS' text='Position Title: - Assistant Manager IT & LMS Report To: - Senior Manager Academi...'
+   Doc 2: Annex G Employees SRs 1.pdf (3 hits)
+     Hit 1: p.? pos='| Sergeant' text='Position Title: | Sergeant Reports To: SDEO, EO, IO and Senior Sergeant Purpose ...'
+     Hit 2: p.? pos='| Senior Sergeant' text='Position Title: | Senior Sergeant Reports To: SDEO, Enforcement Officer and Inve...'
+     Hit 3: p.? pos='Assistant Director (Administration & Logistics)' text='Position Title: - Assistant Director (Administration & Logistics) Reports To: | ...'
+   Doc 3: Annex H Contractual Employees SRs.pdf (26 hits)
+     Hit 1: p.? pos='System Support Officer' text='Position Title: - System Support Officer Report To: - Sub Divisional Enforcement...'
+     Hit 2: p.? pos='Assistant Manager (IT & LMS)' text='Position Title: - Assistant Manager (IT & LMS) Report To: - Deputy Manager (Acad...'
+     Hit 3: p.? pos='Assistant Manager (IT Infrastructure)' text='Position Title: - Assistant Manager (IT Infrastructure) Report To: - Manager (In...'
+     Hit 4: p.? pos='Assistant Manager (Network)' text='Position Title: - Assistant Manager (Network) Report To: - Manager (Infrastructu...'
+     Hit 5: p.? pos='Sergeant (Strike) Reports To: SDEO Wing: - Monitoring & Implementation Purpose of the Position:' text='Position Title: Sergeant (Strike) Reports To: SDEO Wing: - Monitoring & Implemen...'
+4. EVIDENCE TEXT (first 500 chars):
+   <evidence doc="Annex H Contractual Employees SRs.pdf" page="30" eid="4b63796e2f">
+   Position Title: - Android Developer Report To: - Manager (Development) Wing: - IT & Communication Purpose of the Position:
+   The Android Developer designs, develops, and maintains high-performance Android applications. This role involves working with Kotlin/Java, modern Android frameworks, and best practices to create scalable, secure, and user-friendly mobile apps. Areas of Responsibilities:
+   
+   • Experience in Design,
+
+
+
+============================================================
+QUERY: system support officer salary
+============================================================
+
+1. EXPANDED: system support officer salary
+2. TARGET ROLE (original): 'system support officer'
+   TARGET ROLE (expanded): 'system support officer'
+3. RETRIEVAL: 3 doc groups
+   Doc 1: Compiled Working Paper_2nd Meeting PERA  (12 hits)
+     Hit 1: p.? pos='Assistant Director (Administration & HR)' text='Position Title: - Assistant Director (Administration & HR) Reports To: | Deputy ...'
+     Hit 2: p.? pos='| Sergeant' text='Position Title: | Sergeant Reports To: SDEO, EO, IO and Senior Sergeant Purpose ...'
+     Hit 3: p.? pos='System Support Officer' text='Position Title: - System Support Officer Report To: - Sub Divisional Enforcement...'
+     Hit 4: p.? pos='' text='Post Name BS Strength Per ES Total No. ESs Total Strength Secretary District Boa...'
+     Hit 5: p.? pos='Assistant Manager IT & LMS' text='Position Title: - Assistant Manager IT & LMS Report To: - Senior Manager Academi...'
+   Doc 2: Annex G Employees SRs 1.pdf (3 hits)
+     Hit 1: p.? pos='| Sergeant' text='Position Title: | Sergeant Reports To: SDEO, EO, IO and Senior Sergeant Purpose ...'
+     Hit 2: p.? pos='| Senior Sergeant' text='Position Title: | Senior Sergeant Reports To: SDEO, Enforcement Officer and Inve...'
+     Hit 3: p.? pos='Assistant Director (Administration & Logistics)' text='Position Title: - Assistant Director (Administration & Logistics) Reports To: | ...'
+   Doc 3: Annex H Contractual Employees SRs.pdf (26 hits)
+     Hit 1: p.? pos='System Support Officer' text='Position Title: - System Support Officer Report To: - Sub Divisional Enforcement...'
+     Hit 2: p.? pos='Assistant Manager (IT & LMS)' text='Position Title: - Assistant Manager (IT & LMS) Report To: - Deputy Manager (Acad...'
+     Hit 3: p.? pos='Assistant Manager (IT Infrastructure)' text='Position Title: - Assistant Manager (IT Infrastructure) Report To: - Manager (In...'
+     Hit 4: p.? pos='Assistant Manager (Network)' text='Position Title: - Assistant Manager (Network) Report To: - Manager (Infrastructu...'
+     Hit 5: p.? pos='Sergeant (Strike) Reports To: SDEO Wing: - Monitoring & Implementation Purpose of the Position:' text='Position Title: Sergeant (Strike) Reports To: SDEO Wing: - Monitoring & Implemen...'
+4. EVIDENCE TEXT (first 500 chars):
+   <evidence doc="Annex H Contractual Employees SRs.pdf" page="38" eid="177f75d657">
+   Position Title: - System Support Officer Report To: - Sub Divisional Enforcement Officer, Concerned Wing Head Wing: - Enforcement Station, M&I, IT & Communication, Training Purpose of the Position:
+   The System Support Officer assist the SDEO with the various functions at Enforcement Stations. including providing comprehensive technical and administrative support to ensure smooth operations and functioning of IT infr
+
+
+
+============================================================
+QUERY: manager development salary
+============================================================
+
+1. EXPANDED: manager development salary Manager (Development)
+2. TARGET ROLE (original): 'manager development'
+   TARGET ROLE (expanded): 'manager development'
+3. RETRIEVAL: 3 doc groups
+   Doc 1: Compiled Working Paper_2nd Meeting PERA  (23 hits)
+     Hit 1: p.? pos='Manager (Development)' text='Position Title: - Manager (Development) Report To: - Chief Technology Officer (C...'
+     Hit 2: p.? pos='Deputy Manager HR' text='Position Title: - Deputy Manager HR Report To: - Assistant Director Admin. & HR ...'
+     Hit 3: p.? pos='Assistant Manager Monitoring' text='Position Title: - Assistant Manager Monitoring Report To: - Head Monitoring (MIS...'
+     Hit 4: p.? pos='Assistant Manager (Network)' text='Position Title: - Assistant Manager (Network) Report To: - Manager (Infrastructu...'
+     Hit 5: p.? pos='Assistant Manager (IT Infrastructure)' text='Position Title: - Assistant Manager (IT Infrastructure) Report To: - Manager (In...'
+   Doc 2: Annex H Contractual Employees SRs.pdf (21 hits)
+     Hit 1: p.? pos='Assistant Manager (Talent Acquisition)' text='Position Title: - Assistant Manager (Talent Acquisition) Report To: - Deputy Man...'
+     Hit 2: p.? pos='Manager (HR & Talent Acquisition)' text='Position Title: - Manager (HR & Talent Acquisition) Report To: - Deputy Director...'
+     Hit 3: p.? pos='Deputy Manager (HR)' text='Position Title: - Deputy Manager (HR) Report To: - Manager (HR & Talent Acquisit...'
+     Hit 4: p.? pos='Manager (Development)' text='Position Title: - Manager (Development) Report To: - Chief Technology Officer (C...'
+     Hit 5: p.? pos='Assistant Manager (Monitoring)' text='Position Title: - Assistant Manager (Monitoring) Report To: - Manager Monitoring...'
+   Doc 3: Annex G Employees SRs 1.pdf (1 hits)
+     Hit 1: p.? pos='Assistant Director (Administration & Logistics)' text='Position Title: - Assistant Director (Administration & Logistics) Reports To: | ...'
+4. EVIDENCE TEXT (first 500 chars):
+   <evidence doc="Compiled Working Paper_2nd Meeting PERA 03-07-2025.pdf" page="347" eid="9b261c345f">
+   Position Title: - Manager (Development) Report To: - Chief Technology Officer (CTO) Wing: - IT & Communication Purpose of the Position:
+   Responsible for maximizing the productivity / performance of IT Applications / Custom Developed Software / Web Portals by directing the daily, weekly, and monthly activities. To provide leadership, motivation, training, and development of the workforce; process an
+
+
+

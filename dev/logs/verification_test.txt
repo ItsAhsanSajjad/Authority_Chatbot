@@ -1,0 +1,104 @@
+======================================================================
+TEST A: URDU PHRASING CONSISTENCY
+======================================================================
+
+  GROUP: SSO → SPPP-5
+    ✅ Q: SSO salary
+       → SPPP-5 | The salary for the position of System Support Officer is classified as SPPP-5, along with any other benefits admissible 
+
+    ✅ Q: what is the salary of SSO
+       → SPPP-5 | The salary for the System Support Officer (SSO) is categorized under the Special Pay Package PERA (SPPP-5). The breakdow
+
+    ✅ Q: salary of system support officer
+       → SPPP-5 | The salary for the System Support Officer is categorized under the Special PERA Pay Package (SPPP) with a pay scale of *
+
+    ✅ Q: SSO ki salary kya hai
+       → SPPP-5 | System Support Officer (SSO) ki salary SPPP-5 hai, aur iske saath koi aur benefits bhi milenge jo SPPP-5 ke liye Schedul
+
+    ✅ Q: SSO ki salary btao
+       → SPPP-5 | System Support Officer ki salary SPPP-5 hai, aur iske sath Schedule-III mein zikar shuda kisi bhi aur faida ka bhi haq h
+
+    ✅ Q: how much does SSO earn
+       → SPPP-5 | The System Support Officer (SSO) earns under the Special Pay Package PERA (SPPP) with the following details:
+
+- **Basic 
+
+  RESULT: ✅ CONSISTENT
+
+  GROUP: Manager Dev → SPPP-3
+    ✅ Q: manager development salary
+       → SPPP-3 | The salary for the position of Manager (Development) is classified as SPPP-3, along with any other benefits admissible t
+
+    ✅ Q: salary of manager development
+       → SPPP-3 | The salary for the position of Manager (Development) is classified as **SPPP-3**, along with any other benefits admissib
+
+    ✅ Q: manager development ka pay scale kya hai
+       → SPPP-3 | Manager (Development) ka pay scale SPPP-3 hai.
+
+Note: This answer is derived from the relevant PERA provisions and is no
+
+    ✅ Q: manager development ki salary kitni hai
+       → SPPP-3 | Manager (Development) ki salary SPPP-3 hai, aur iske ilawa koi aur benefit bhi milega jo SPPP-3 ke liye Schedule-III mei
+
+  RESULT: ✅ CONSISTENT
+
+  GROUP: Deputy Dir → BPS-18
+    ✅ Q: deputy director salary
+       → BPS-18 | The salary and benefits for the position of Deputy Director are equivalent to **BPS-18** plus **PERA Special Allowance o
+
+    ✅ Q: deputy director ka pay scale
+       → BPS-18 | The pay scale for the position of Deputy Director is equivalent to **BPS-18** along with the PERA Special Allowance or D
+
+    ✅ Q: deputy director ki salary kya hai
+       → BPS-18 | Deputy Director ki salary BPS-18 ke barabar hai, saath hi PERA Special Allowance ya Deputation Allowance, vehicle, aur i
+
+  RESULT: ✅ CONSISTENT
+
+======================================================================
+TEST B: CONSISTENCY (same query 3x)
+======================================================================
+
+  Q: SSO salary
+    Run 1: SPPP-5 | The salary for the System Support Officer (SSO) is classified as SPPP-5. Additionally, any other ben
+    Run 2: SPPP-5 | The salary for the position of System Support Officer is classified as SPPP-5, along with any other 
+    Run 3: SPPP-5 | The salary for the System Support Officer (SSO) is classified as SPPP-5. Additionally, any other ben
+  RESULT: ✅ CONSISTENT
+
+  Q: enforcement officer salary
+    Run 1: NO_VALUE | However, the appointment details mention that it is explained in column 5 of Schedule-II, which may 
+    Run 2: NO_VALUE | However, it is mentioned that the appointment is as explained in column 5 of Schedule-II, which may 
+    Run 3: NO_VALUE | However, it is mentioned that the appointment is as explained in column 5 of Schedule-II, which may 
+  RESULT: ✅ CONSISTENT
+
+  Q: what is PERA
+    Run 1: NO_VALUE | The Punjab Enforcement and Regulatory Authority (PERA) is an organization that focuses on enforcing 
+    Run 2: NO_VALUE | The Punjab Enforcement and Regulatory Authority (PERA) is an organization that focuses on enforcing 
+    Run 3: NO_VALUE | The Punjab Enforcement and Regulatory Authority (PERA) is an organization that focuses on enforcing 
+  RESULT: ✅ CONSISTENT
+
+======================================================================
+TEST C: GENERAL QUERIES (refused)
+======================================================================
+
+  ✅ Q: what is HTML → The question about HTML is outside PERA's scope.
+
+Note: This answer is derived from the relevant PER
+
+  ✅ Q: how to make biryani → I'm sorry, but the question about making biryani is outside PERA's scope. If you have any questions 
+
+  ✅ Q: explain machine learning → The question about machine learning is outside PERA's scope. Please let me know if you have any ques
+
+======================================================================
+TEST D: FOLLOW-UP QUERIES
+======================================================================
+
+  Q1: Tell me about SSO → The **System Support Officer (SSO)** plays a crucial role in assisting the Sub Divisional Enforcemen
+
+  ✅ Q: his salary? → The salary for the **System Support Officer (SSO)** position is classified under **SPPP-5**. Additionally, the officer i
+
+  ✅ Q: who does he report to? → The **System Support Officer (SSO)** reports to the **Sub Divisional Enforcement Officer (SDEO)** of the concerned Enfor
+
+
+======================================================================
+OVERALL: 27/27 passed (100%)
+======================================================================
