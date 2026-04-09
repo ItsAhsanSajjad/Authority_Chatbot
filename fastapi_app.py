@@ -791,25 +791,62 @@ def simple_ask(request: Request, body: SimpleChatRequest):
     lookup_type = None
     lookup_result = None
     if source_mode in ("stored_api", "both"):
-        lookup_type = detect_lookup_intent(query_for_retrieval)
-        if not lookup_type:
-            # Also check original question (before rewriting)
-            lookup_type = detect_lookup_intent(question)
-        # For structured queries in "both" mode, also try lookup detection
-        if not lookup_type and query_class == QueryType.STRUCTURED:
-            lookup_type = detect_lookup_intent(question)
+        # ── Follow-up detection FIRST ──────────────────────────────
+        # When there's a previous lookup context (e.g. oa_tehsil:Shalimar),
+        # follow-up questions like "in k against kitny challans?" should
+        # carry forward that context. If we run direct intent detection
+        # first, it loses the location and returns oa_summary.
+        if session.last_lookup_type:
+            # 1. OA follow-up (including cross-domain OA→Challan)
+            try:
+                from operational_activity_lookup import detect_oa_followup
+                followup_intent = detect_oa_followup(question, session.last_lookup_type)
+                if followup_intent:
+                    lookup_type = followup_intent
+                    log.info("OA follow-up detected: '%s' -> %s (prev=%s)",
+                             question[:60], followup_intent, session.last_lookup_type)
+            except ImportError:
+                pass
 
-        # ── Challan follow-up: carry forward previous challan context ──
-        if not lookup_type and session.last_lookup_type:
-            from challan_lookup import detect_challan_followup
-            followup_intent = detect_challan_followup(question, session.last_lookup_type)
-            if followup_intent:
-                lookup_type = followup_intent
-                log.info("Challan follow-up detected: '%s' -> %s (prev=%s)",
-                         question[:60], followup_intent, session.last_lookup_type)
+            # 2. Inspection follow-up
+            if not lookup_type:
+                try:
+                    from inspection_lookup import detect_inspection_followup
+                    followup_intent = detect_inspection_followup(question, session.last_lookup_type)
+                    if followup_intent:
+                        lookup_type = followup_intent
+                        log.info("Inspection follow-up detected: '%s' -> %s (prev=%s)",
+                                 question[:60], followup_intent, session.last_lookup_type)
+                except ImportError:
+                    pass
+
+            # 3. Challan follow-up (only if OA/Inspection didn't match)
+            if not lookup_type:
+                from challan_lookup import detect_challan_followup
+                followup_intent = detect_challan_followup(question, session.last_lookup_type)
+                if followup_intent:
+                    lookup_type = followup_intent
+                    log.info("Challan follow-up detected: '%s' -> %s (prev=%s)",
+                             question[:60], followup_intent, session.last_lookup_type)
+
+        # ── Direct intent detection (if no follow-up matched) ─────
+        if not lookup_type:
+            # Check original question FIRST — the LLM rewrite can inject
+            # keywords (e.g. adding "challans" to a pure requisition
+            # question) which would cause false cross-domain routing.
+            lookup_type = detect_lookup_intent(question)
+            if not lookup_type:
+                # Fallback: check rewritten query (may have resolved dates/context)
+                lookup_type = detect_lookup_intent(query_for_retrieval)
+            # For structured queries in "both" mode, also try lookup detection
+            if not lookup_type and query_class == QueryType.STRUCTURED:
+                lookup_type = detect_lookup_intent(question)
 
     if lookup_type:
-        lookup_result = execute_lookup(lookup_type, question=question)
+        # Pass both original and rewritten question — rewritten may have
+        # resolved pronouns/dates from conversation context
+        _lookup_q = query_for_retrieval if query_for_retrieval != question else question
+        lookup_result = execute_lookup(lookup_type, question=_lookup_q)
         log.info("API lookup detected (type=%s, mode=%s, found=%s)",
                  lookup_type, source_mode, bool(lookup_result))
 
@@ -877,6 +914,14 @@ def simple_ask(request: Request, body: SimpleChatRequest):
     # filtering sees the actual role name (e.g. "salary of manager development"
     # instead of "salary of this?")
     question_for_llm = anchored_q if was_anchored else question
+    # For vague follow-ups ("tell me in detail"), use the rewritten query which
+    # has the full context resolved from conversation history
+    if lookup_type and query_for_retrieval and query_for_retrieval != question:
+        _q_words = len(question.split())
+        if _q_words <= 8:  # short/vague follow-up
+            question_for_llm = query_for_retrieval
+            log.info("Using rewritten query for LLM (vague follow-up): '%s'",
+                     query_for_retrieval[:100])
     result = answer_question(
         question_for_llm,
         retrieval,

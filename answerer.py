@@ -1069,7 +1069,9 @@ def answer_question(
             "present a direct, well-formatted list from the data. Use bullet points or numbered lists.\n"
             "26) Do NOT say 'not found in PERA documents' — the data source is stored API data, "
             "not documents. If data is missing, say 'not found in the stored API data'.\n"
-            "27) Extract and present ALL records from the API data. Do not summarize or truncate.\n\n"
+            "27) Extract and present ALL records from the API data. Do not summarize or truncate.\n"
+            "28) CRITICAL: API data about inspections, challans, requisitions, officers, and performance "
+            "statistics IS PERA data. NEVER say 'outside PERA scope' when API evidence is present.\n\n"
         ),
         "both": (
             "SOURCE TYPE: MIXED (DOCUMENTS + STORED API DATA)\n"
@@ -1080,7 +1082,13 @@ def answer_question(
             "(e.g., lists of divisions, counts, names), then add document-based context and explanation.\n"
             "27) For list/lookup questions, lead with the structured API data, then supplement with "
             "document explanation if available.\n"
-            "28) Clearly present ALL API records — do not summarize a list into a paragraph.\n\n"
+            "28) Clearly present ALL API records — do not summarize a list into a paragraph.\n"
+            "29) CRITICAL: API data about inspections, challans, requisitions, officers, and performance "
+            "statistics IS PERA data. NEVER say 'outside PERA scope' when API evidence contains "
+            "inspection counts, challan data, officer performance, or any operational data. "
+            "This data comes from PERA's own operational systems.\n"
+            "30) When the Context contains numeric data (counts, amounts, totals) from API sources, "
+            "ALWAYS present those numbers in your answer — do not ignore them.\n\n"
         ),
         "documents": (
             "SOURCE TYPE: REGULATORY DOCUMENTS\n"

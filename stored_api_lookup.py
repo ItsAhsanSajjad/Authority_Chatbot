@@ -37,10 +37,32 @@ def detect_lookup_intent(question: str) -> Optional[str]:
     Returns a ``source_id`` string, or ``None``.
 
     Checks (in order):
-      1. Challan queries  → ``challan_*`` source IDs
-      2. YAML-registered APIs → ``app_data_divisions`` etc.
+      1. Operational activity queries → ``oa_*`` source IDs
+         (checked first so "requisitions" / "operational activity" keywords
+          aren't swallowed by the broader challan patterns)
+      2. Challan queries  → ``challan_*`` source IDs
+      3. YAML-registered APIs → ``app_data_divisions`` etc.
     """
-    # 1. Challan queries (dedicated relational DB)
+    # 1. Operational activity queries (PostgreSQL)
+    #    Checked BEFORE challans so OA-specific keywords get priority
+    try:
+        from operational_activity_lookup import detect_operational_activity_intent
+        oa_id = detect_operational_activity_intent(question)
+        if oa_id:
+            return oa_id
+    except ImportError:
+        pass
+
+    # 2. Inspection performance queries (PostgreSQL)
+    try:
+        from inspection_lookup import detect_inspection_intent
+        insp_id = detect_inspection_intent(question)
+        if insp_id:
+            return insp_id
+    except ImportError:
+        pass
+
+    # 3. Challan queries (dedicated relational DB)
     try:
         from challan_lookup import detect_challan_intent
         challan_id = detect_challan_intent(question)
@@ -49,7 +71,7 @@ def detect_lookup_intent(question: str) -> Optional[str]:
     except ImportError:
         pass
 
-    # 2. YAML-registered generic lookups
+    # 3. YAML-registered generic lookups
     from api_lookup_registry import detect_lookup_intent as _detect
     return _detect(question)
 
@@ -73,6 +95,24 @@ def execute_lookup(
             return execute_challan_lookup(source_id, question)
         except ImportError:
             log.warning("challan_lookup module not available")
+            return None
+
+    # Inspection performance lookups
+    if source_id and source_id.startswith("insp_"):
+        try:
+            from inspection_lookup import execute_inspection_lookup
+            return execute_inspection_lookup(source_id, question)
+        except ImportError:
+            log.warning("inspection_lookup module not available")
+            return None
+
+    # Operational activity lookups
+    if source_id and source_id.startswith("oa_"):
+        try:
+            from operational_activity_lookup import execute_operational_activity_lookup
+            return execute_operational_activity_lookup(source_id, question)
+        except ImportError:
+            log.warning("operational_activity_lookup module not available")
             return None
 
     # Generic YAML-driven lookups
