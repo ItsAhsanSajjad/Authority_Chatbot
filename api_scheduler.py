@@ -147,8 +147,121 @@ class ApiScheduler:
             self._cycle_count, synced, failed,
         )
 
+        # ── Operational Activity refresh (every 6 hours) ─────
+        self._maybe_refresh_operational_activity()
+
+        # ── Inspection Performance summaries (every 5 min) ─────
+        self._maybe_refresh_inspection_summaries()
+
+        # ── Inspection Performance details (every 2 hours) ─────
+        self._maybe_refresh_inspection_details()
+
         # Deletion lifecycle — process pending_removal sources
         self._process_pending_removals(db, mgr)
+
+    _last_oa_refresh: float = 0.0
+    _OA_REFRESH_INTERVAL = 6 * 3600  # 6 hours
+
+    _last_ip_summary_refresh: float = 0.0
+    _IP_SUMMARY_REFRESH_INTERVAL = 5 * 60      # 5 minutes
+
+    _last_ip_detail_refresh: float = 0.0
+    _IP_DETAIL_REFRESH_INTERVAL = 2 * 3600     # 2 hours
+
+    def _maybe_refresh_operational_activity(self) -> None:
+        """Refresh operational_activity summary tables every 6 hours."""
+        now = time.time()
+        if now - self._last_oa_refresh < self._OA_REFRESH_INTERVAL:
+            return  # Not yet time
+
+        try:
+            from operational_activity_ingest import (
+                ingest_operational_activity, reconcile_summary_from_details
+            )
+            log.info("Refreshing operational activity data...")
+            # Refresh all summary levels + tehsil details
+            results = ingest_operational_activity(
+                levels=["divisions", "districts", "tehsils", "tehsil_breakdown"]
+            )
+            for lvl, cnt in results.items():
+                log.info("  OA %s: %d records", lvl, cnt)
+            # Reconcile so summary matches detail exactly
+            reconcile_summary_from_details()
+            log.info("Operational activity summary refresh complete")
+
+            # Also refresh real requisition data from SDEO APIs
+            try:
+                from requisition_ingest import ingest_requisitions_quick
+                log.info("Refreshing requisition detail data (SDEO)...")
+                req_stats = ingest_requisitions_quick(days=30)
+                log.info("  Requisitions: %d stored, Members: %d stored",
+                         req_stats.get("requisitions_stored", 0),
+                         req_stats.get("members_stored", 0))
+            except Exception as re:
+                log.error("Requisition ingestion failed: %s", re, exc_info=True)
+
+            self._last_oa_refresh = now
+            log.info("Operational activity + requisition refresh complete")
+        except Exception as e:
+            log.error("Operational activity refresh failed: %s", e, exc_info=True)
+
+    def _maybe_refresh_inspection_summaries(self) -> None:
+        """Refresh inspection performance summaries every 5 minutes."""
+        now = time.time()
+        if now - self._last_ip_summary_refresh < self._IP_SUMMARY_REFRESH_INTERVAL:
+            return
+        try:
+            from inspection_ingest import ingest_inspection_summaries
+            log.info("Refreshing inspection performance summaries...")
+            results = ingest_inspection_summaries()
+            for lvl, cnt in results.items():
+                log.info("  Inspection %s: %d records", lvl, cnt)
+            self._last_ip_summary_refresh = now
+            log.info("Inspection summary refresh complete")
+        except Exception as e:
+            log.error("Inspection summary refresh failed: %s", e, exc_info=True)
+
+    def _maybe_refresh_inspection_details(self) -> None:
+        """Refresh inspection details + officer summaries every 2 hours."""
+        now = time.time()
+        if now - self._last_ip_detail_refresh < self._IP_DETAIL_REFRESH_INTERVAL:
+            return
+        try:
+            from inspection_ingest import (
+                ingest_inspection_details,
+                ingest_inspection_officer_summaries,
+                ingest_officer_inspection_details,
+                ingest_officer_inspections,
+            )
+            log.info("Refreshing inspection performance details...")
+            total = ingest_inspection_details()
+            log.info("  Inspection details: %d records stored", total)
+
+            # SDEO officer-level summaries
+            log.info("Refreshing SDEO officer inspection summaries...")
+            stats = ingest_inspection_officer_summaries()
+            log.info("  Officer summaries: %d tehsils, %d officers stored",
+                     stats.get("tehsils_processed", 0),
+                     stats.get("officers_stored", 0))
+
+            # PCM officer-inspection-details (with fineAmount)
+            log.info("Refreshing PCM officer inspection details...")
+            pcm_stats = ingest_officer_inspection_details()
+            log.info("  PCM officers: %d tehsils, %d officers stored",
+                     pcm_stats.get("tehsils_processed", 0),
+                     pcm_stats.get("officers_stored", 0))
+
+            # PCM individual officer inspections (granular records)
+            log.info("Refreshing PCM individual officer inspections...")
+            insp_stats = ingest_officer_inspections()
+            log.info("  PCM inspections: %d officers, %d records stored",
+                     insp_stats.get("officers_processed", 0),
+                     insp_stats.get("records_stored", 0))
+
+            self._last_ip_detail_refresh = now
+            log.info("Inspection detail + officer refresh complete")
+        except Exception as e:
+            log.error("Inspection detail refresh failed: %s", e, exc_info=True)
 
     def _process_pending_removals(self, db, mgr) -> None:
         """

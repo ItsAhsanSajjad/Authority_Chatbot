@@ -656,6 +656,344 @@ _MIGRATIONS: List[Tuple[int, str, List[str]]] = [
         "CREATE INDEX IF NOT EXISTS idx_challan_data_officer_action ON challan_data (officer_name, action_date)",
     ]),
 
+    # ── 30. Operational Activity table ───────────────────────
+    (30, "Create operational_activity table for PERA360 operational data", [
+        """
+        CREATE TABLE IF NOT EXISTS operational_activity (
+            id                  SERIAL PRIMARY KEY,
+            level               VARCHAR(20) NOT NULL,
+            division_id         INTEGER,
+            division_name       VARCHAR(100),
+            district_id         INTEGER,
+            district_name       VARCHAR(100),
+            tehsil_id           INTEGER,
+            tehsil_name         VARCHAR(100),
+            price_control       INTEGER NOT NULL DEFAULT 0,
+            anti_encroachment   INTEGER NOT NULL DEFAULT 0,
+            eviction            INTEGER NOT NULL DEFAULT 0,
+            anti_hoarding       INTEGER NOT NULL DEFAULT 0,
+            public_nuisance     INTEGER NOT NULL DEFAULT 0,
+            total               INTEGER NOT NULL DEFAULT 0,
+            snapshot_date       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            UNIQUE (level, division_id, district_id, tehsil_id, snapshot_date)
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS idx_oa_level ON operational_activity (level)",
+        "CREATE INDEX IF NOT EXISTS idx_oa_division ON operational_activity (division_name)",
+        "CREATE INDEX IF NOT EXISTS idx_oa_district ON operational_activity (district_name)",
+        "CREATE INDEX IF NOT EXISTS idx_oa_tehsil ON operational_activity (tehsil_name)",
+        "CREATE INDEX IF NOT EXISTS idx_oa_snapshot ON operational_activity (snapshot_date)",
+    ]),
+
+    # ── 31. Operational Activity Detail (tehsil-breakdown) ───
+    (31, "Create operational_activity_detail table for individual action records", [
+        """
+        CREATE TABLE IF NOT EXISTS operational_activity_detail (
+            id                      SERIAL PRIMARY KEY,
+            tehsil_id               INTEGER NOT NULL,
+            tehsil_name             VARCHAR(100),
+            district_id             INTEGER,
+            district_name           VARCHAR(100),
+            division_id             INTEGER,
+            division_name           VARCHAR(100),
+            action_date             TIMESTAMPTZ,
+            created_date            TIMESTAMPTZ,
+            requisition_type_id     INTEGER,
+            requisition_name        VARCHAR(50),
+            status                  VARCHAR(10),
+            assigned_to             VARCHAR(200),
+            snapshot_date           DATE NOT NULL DEFAULT CURRENT_DATE,
+            UNIQUE (tehsil_id, action_date, assigned_to, requisition_type_id, snapshot_date)
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS idx_oad_tehsil ON operational_activity_detail (tehsil_id)",
+        "CREATE INDEX IF NOT EXISTS idx_oad_tehsil_name ON operational_activity_detail (tehsil_name)",
+        "CREATE INDEX IF NOT EXISTS idx_oad_district ON operational_activity_detail (district_name)",
+        "CREATE INDEX IF NOT EXISTS idx_oad_officer ON operational_activity_detail (assigned_to)",
+        "CREATE INDEX IF NOT EXISTS idx_oad_action_date ON operational_activity_detail (action_date)",
+        "CREATE INDEX IF NOT EXISTS idx_oad_req_name ON operational_activity_detail (requisition_name)",
+        "CREATE INDEX IF NOT EXISTS idx_oad_snapshot ON operational_activity_detail (snapshot_date)",
+    ]),
+
+    (32, "Fix operational_activity_detail unique constraint — include created_date", [
+        """
+        ALTER TABLE operational_activity_detail
+            DROP CONSTRAINT IF EXISTS operational_activity_detail_tehsil_id_action_date_assigned__key
+        """,
+        """
+        ALTER TABLE operational_activity_detail
+            ADD CONSTRAINT operational_activity_detail_unique_row
+            UNIQUE (tehsil_id, action_date, created_date, assigned_to, requisition_type_id, snapshot_date)
+        """,
+    ]),
+
+    # ── 33. Real requisition data from sdeo-dashboard APIs ──
+    (33, "Create requisition_detail and requisition_member tables for real SDEO data", [
+        """
+        CREATE TABLE IF NOT EXISTS requisition_detail (
+            id                      SERIAL,
+            snapshot_date           DATE NOT NULL DEFAULT CURRENT_DATE,
+            requisition_id          TEXT NOT NULL,
+            tehsil_id               INTEGER,
+            tehsil_name             TEXT,
+            district_id             INTEGER,
+            district_name           TEXT,
+            division_id             INTEGER,
+            division_name           TEXT,
+            requisition_type_id     INTEGER,
+            requisition_type_name   TEXT,
+            created_at              TIMESTAMPTZ,
+            created_by_name         TEXT,
+            area_location           TEXT,
+            total_squad_members     INTEGER DEFAULT 0,
+            arrived_members         INTEGER DEFAULT 0,
+            arrival_percentage      NUMERIC(8,4) DEFAULT 0,
+            arrival_latitude        NUMERIC(12,8),
+            arrival_longitude       NUMERIC(12,8),
+            ingested_at             TIMESTAMPTZ DEFAULT NOW(),
+            CONSTRAINT requisition_detail_pkey
+                PRIMARY KEY (requisition_id, snapshot_date)
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS idx_reqd_tehsil     ON requisition_detail (tehsil_id)",
+        "CREATE INDEX IF NOT EXISTS idx_reqd_tehsil_nm  ON requisition_detail (tehsil_name)",
+        "CREATE INDEX IF NOT EXISTS idx_reqd_district   ON requisition_detail (district_name)",
+        "CREATE INDEX IF NOT EXISTS idx_reqd_division   ON requisition_detail (division_name)",
+        "CREATE INDEX IF NOT EXISTS idx_reqd_snapshot   ON requisition_detail (snapshot_date)",
+        "CREATE INDEX IF NOT EXISTS idx_reqd_created    ON requisition_detail (created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_reqd_type       ON requisition_detail (requisition_type_id)",
+        "CREATE INDEX IF NOT EXISTS idx_reqd_creator    ON requisition_detail (created_by_name)",
+        """
+        CREATE TABLE IF NOT EXISTS requisition_member (
+            id                      SERIAL,
+            snapshot_date           DATE NOT NULL DEFAULT CURRENT_DATE,
+            requisition_id          TEXT NOT NULL,
+            member_id               TEXT NOT NULL,
+            member_name             TEXT,
+            is_completed            BOOLEAN DEFAULT FALSE,
+            arrival_time            TIMESTAMPTZ,
+            departure_time          TIMESTAMPTZ,
+            ingested_at             TIMESTAMPTZ DEFAULT NOW(),
+            CONSTRAINT requisition_member_pkey
+                PRIMARY KEY (requisition_id, member_id, snapshot_date)
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS idx_reqm_reqid      ON requisition_member (requisition_id)",
+        "CREATE INDEX IF NOT EXISTS idx_reqm_member     ON requisition_member (member_name)",
+        "CREATE INDEX IF NOT EXISTS idx_reqm_snapshot   ON requisition_member (snapshot_date)",
+    ]),
+
+    (34, "Create inspection_performance and inspection_performance_detail tables", [
+        # NOTE: The 'challans' column counts EXCLUDE overdue challans per the API spec.
+        """
+        CREATE TABLE IF NOT EXISTS inspection_performance (
+            id              SERIAL PRIMARY KEY,
+            level           VARCHAR(20)  NOT NULL,
+            division_id     INTEGER,
+            division_name   VARCHAR(100),
+            district_id     INTEGER,
+            district_name   VARCHAR(100),
+            tehsil_id       INTEGER,
+            tehsil_name     VARCHAR(100),
+            total_actions   INTEGER NOT NULL DEFAULT 0,
+            challans        INTEGER NOT NULL DEFAULT 0,
+            firs            INTEGER NOT NULL DEFAULT 0,
+            warnings        INTEGER NOT NULL DEFAULT 0,
+            no_offenses     INTEGER NOT NULL DEFAULT 0,
+            sealed          INTEGER NOT NULL DEFAULT 0,
+            snapshot_date   DATE NOT NULL DEFAULT CURRENT_DATE,
+            ingested_at     TIMESTAMPTZ DEFAULT NOW()
+        )
+        """,
+        """CREATE UNIQUE INDEX IF NOT EXISTS inspection_performance_uq
+           ON inspection_performance (
+               level,
+               COALESCE(division_id, 0),
+               COALESCE(district_id, 0),
+               COALESCE(tehsil_id, 0),
+               snapshot_date
+           )""",
+        "CREATE INDEX IF NOT EXISTS idx_ip_level        ON inspection_performance (level)",
+        "CREATE INDEX IF NOT EXISTS idx_ip_division     ON inspection_performance (division_name)",
+        "CREATE INDEX IF NOT EXISTS idx_ip_district     ON inspection_performance (district_name)",
+        "CREATE INDEX IF NOT EXISTS idx_ip_tehsil       ON inspection_performance (tehsil_name)",
+        "CREATE INDEX IF NOT EXISTS idx_ip_snapshot     ON inspection_performance (snapshot_date)",
+        # Detail table — will be populated once the user provides the 4th API response format
+        """
+        CREATE TABLE IF NOT EXISTS inspection_performance_detail (
+            id              SERIAL PRIMARY KEY,
+            snapshot_date   DATE NOT NULL DEFAULT CURRENT_DATE,
+            tehsil_id       INTEGER NOT NULL,
+            tehsil_name     TEXT,
+            district_id     INTEGER,
+            district_name   TEXT,
+            division_id     INTEGER,
+            division_name   TEXT,
+            record_id       TEXT,
+            action_type     TEXT,
+            action_date     TIMESTAMPTZ,
+            officer_name    TEXT,
+            location        TEXT,
+            details_json    JSONB DEFAULT '{}'::jsonb,
+            ingested_at     TIMESTAMPTZ DEFAULT NOW()
+        )
+        """,
+        """CREATE UNIQUE INDEX IF NOT EXISTS inspection_detail_uq
+           ON inspection_performance_detail (
+               tehsil_id, COALESCE(record_id, ''), snapshot_date
+           )""",
+        "CREATE INDEX IF NOT EXISTS idx_ipd_tehsil      ON inspection_performance_detail (tehsil_id)",
+        "CREATE INDEX IF NOT EXISTS idx_ipd_tehsil_nm   ON inspection_performance_detail (tehsil_name)",
+        "CREATE INDEX IF NOT EXISTS idx_ipd_district     ON inspection_performance_detail (district_name)",
+        "CREATE INDEX IF NOT EXISTS idx_ipd_division     ON inspection_performance_detail (division_name)",
+        "CREATE INDEX IF NOT EXISTS idx_ipd_snapshot     ON inspection_performance_detail (snapshot_date)",
+        "CREATE INDEX IF NOT EXISTS idx_ipd_action_type  ON inspection_performance_detail (action_type)",
+        "CREATE INDEX IF NOT EXISTS idx_ipd_officer      ON inspection_performance_detail (officer_name)",
+    ]),
+
+    (35, "Create inspection_officer_summary table for SDEO inspections-summary API", [
+        # Stores per-officer inspection breakdowns per tehsil + date range.
+        # Source: GET /api/sdeo-dashboard/inspections-summary?tehsilId=X&startDate=Y&endDate=Z
+        # NOTE: challans count EXCLUDES overdue challans.
+        """
+        CREATE TABLE IF NOT EXISTS inspection_officer_summary (
+            id              SERIAL PRIMARY KEY,
+            snapshot_date   DATE NOT NULL DEFAULT CURRENT_DATE,
+            tehsil_id       INTEGER NOT NULL,
+            tehsil_name     TEXT,
+            district_id     INTEGER,
+            district_name   TEXT,
+            division_id     INTEGER,
+            division_name   TEXT,
+            start_date      DATE,
+            end_date        DATE,
+            -- Tehsil-level totals
+            total_actions   INTEGER NOT NULL DEFAULT 0,
+            total_challans  INTEGER NOT NULL DEFAULT 0,
+            total_firs      INTEGER NOT NULL DEFAULT 0,
+            total_warnings  INTEGER NOT NULL DEFAULT 0,
+            total_no_offenses INTEGER NOT NULL DEFAULT 0,
+            total_sealed    INTEGER NOT NULL DEFAULT 0,
+            -- Officer-level data (one row per officer)
+            officer_name    TEXT NOT NULL,
+            officer_challans  INTEGER NOT NULL DEFAULT 0,
+            officer_firs      INTEGER NOT NULL DEFAULT 0,
+            officer_warnings  INTEGER NOT NULL DEFAULT 0,
+            officer_no_offenses INTEGER NOT NULL DEFAULT 0,
+            officer_inspections INTEGER NOT NULL DEFAULT 0,
+            officer_sealed    INTEGER NOT NULL DEFAULT 0,
+            ingested_at     TIMESTAMPTZ DEFAULT NOW()
+        )
+        """,
+        """CREATE UNIQUE INDEX IF NOT EXISTS inspection_officer_summary_uq
+           ON inspection_officer_summary (
+               tehsil_id, COALESCE(officer_name, ''),
+               COALESCE(start_date, '1900-01-01'::date),
+               COALESCE(end_date, '1900-01-01'::date),
+               snapshot_date
+           )""",
+        "CREATE INDEX IF NOT EXISTS idx_ios_tehsil       ON inspection_officer_summary (tehsil_id)",
+        "CREATE INDEX IF NOT EXISTS idx_ios_tehsil_nm    ON inspection_officer_summary (tehsil_name)",
+        "CREATE INDEX IF NOT EXISTS idx_ios_district     ON inspection_officer_summary (district_name)",
+        "CREATE INDEX IF NOT EXISTS idx_ios_division     ON inspection_officer_summary (division_name)",
+        "CREATE INDEX IF NOT EXISTS idx_ios_officer      ON inspection_officer_summary (officer_name)",
+        "CREATE INDEX IF NOT EXISTS idx_ios_snapshot     ON inspection_officer_summary (snapshot_date)",
+        "CREATE INDEX IF NOT EXISTS idx_ios_daterange    ON inspection_officer_summary (start_date, end_date)",
+    ]),
+
+    (36, "Create officer_inspection_detail table for PCM officer-inspection-details API", [
+        # Source: GET /api/Pcm/officer-inspection-details
+        # Per-officer totals by tehsil: inspections, challans, fineAmount, sealed, arrestCase
+        """
+        CREATE TABLE IF NOT EXISTS officer_inspection_detail (
+            id                  SERIAL PRIMARY KEY,
+            snapshot_date       DATE NOT NULL DEFAULT CURRENT_DATE,
+            tehsil_id           INTEGER NOT NULL,
+            tehsil_name         TEXT,
+            district_id         INTEGER,
+            district_name       TEXT,
+            division_id         INTEGER,
+            division_name       TEXT,
+            requisition_type_id INTEGER DEFAULT 0,
+            start_date          DATE,
+            end_date            DATE,
+            user_id             TEXT,
+            officer_name        TEXT NOT NULL,
+            total_inspections   INTEGER NOT NULL DEFAULT 0,
+            total_challans      INTEGER NOT NULL DEFAULT 0,
+            fine_amount         BIGINT NOT NULL DEFAULT 0,
+            sealed              INTEGER NOT NULL DEFAULT 0,
+            arrest_case         INTEGER NOT NULL DEFAULT 0,
+            ingested_at         TIMESTAMPTZ DEFAULT NOW()
+        )
+        """,
+        """CREATE UNIQUE INDEX IF NOT EXISTS officer_inspection_detail_uq
+           ON officer_inspection_detail (
+               tehsil_id, COALESCE(user_id, ''),
+               COALESCE(requisition_type_id, 0),
+               COALESCE(start_date, '1900-01-01'::date),
+               COALESCE(end_date, '1900-01-01'::date),
+               snapshot_date
+           )""",
+        "CREATE INDEX IF NOT EXISTS idx_oid_tehsil      ON officer_inspection_detail (tehsil_id)",
+        "CREATE INDEX IF NOT EXISTS idx_oid_tehsil_nm   ON officer_inspection_detail (tehsil_name)",
+        "CREATE INDEX IF NOT EXISTS idx_oid_district    ON officer_inspection_detail (district_name)",
+        "CREATE INDEX IF NOT EXISTS idx_oid_division    ON officer_inspection_detail (division_name)",
+        "CREATE INDEX IF NOT EXISTS idx_oid_officer     ON officer_inspection_detail (officer_name)",
+        "CREATE INDEX IF NOT EXISTS idx_oid_snapshot    ON officer_inspection_detail (snapshot_date)",
+        "CREATE INDEX IF NOT EXISTS idx_oid_userid      ON officer_inspection_detail (user_id)",
+    ]),
+
+    (37, "Create officer_inspection_record table for individual PCM inspection records", [
+        # Source: GET /api/Pcm/officer-inspections?officerId=X&tehsilId=Y&fromDate=Z&toDate=W
+        # Individual inspection records: owner, CNIC, address, case type, fine, lat/lng
+        """
+        CREATE TABLE IF NOT EXISTS officer_inspection_record (
+            id              SERIAL PRIMARY KEY,
+            snapshot_date   DATE NOT NULL DEFAULT CURRENT_DATE,
+            tehsil_id       INTEGER NOT NULL,
+            tehsil_name     TEXT,
+            district_id     INTEGER,
+            district_name   TEXT,
+            division_id     INTEGER,
+            division_name   TEXT,
+            officer_id      TEXT NOT NULL,
+            officer_name    TEXT,
+            owner_name      TEXT,
+            cnic            TEXT,
+            address         TEXT,
+            is_challan      BOOLEAN DEFAULT FALSE,
+            is_warning      BOOLEAN DEFAULT FALSE,
+            is_no_offense   BOOLEAN DEFAULT FALSE,
+            is_arrest       BOOLEAN DEFAULT FALSE,
+            is_confiscated  BOOLEAN DEFAULT FALSE,
+            fine_amount     BIGINT DEFAULT 0,
+            latitude        NUMERIC(12,8),
+            longitude       NUMERIC(12,8),
+            from_date       DATE,
+            to_date         DATE,
+            ingested_at     TIMESTAMPTZ DEFAULT NOW()
+        )
+        """,
+        """CREATE UNIQUE INDEX IF NOT EXISTS officer_inspection_record_uq
+           ON officer_inspection_record (
+               tehsil_id, officer_id,
+               COALESCE(cnic, ''), COALESCE(owner_name, ''),
+               COALESCE(fine_amount, 0),
+               COALESCE(from_date, '1900-01-01'::date),
+               COALESCE(to_date, '1900-01-01'::date),
+               snapshot_date
+           )""",
+        "CREATE INDEX IF NOT EXISTS idx_oir_tehsil      ON officer_inspection_record (tehsil_id)",
+        "CREATE INDEX IF NOT EXISTS idx_oir_district    ON officer_inspection_record (district_name)",
+        "CREATE INDEX IF NOT EXISTS idx_oir_division    ON officer_inspection_record (division_name)",
+        "CREATE INDEX IF NOT EXISTS idx_oir_officer_id  ON officer_inspection_record (officer_id)",
+        "CREATE INDEX IF NOT EXISTS idx_oir_officer_nm  ON officer_inspection_record (officer_name)",
+        "CREATE INDEX IF NOT EXISTS idx_oir_snapshot    ON officer_inspection_record (snapshot_date)",
+        "CREATE INDEX IF NOT EXISTS idx_oir_challan     ON officer_inspection_record (is_challan)",
+        "CREATE INDEX IF NOT EXISTS idx_oir_dates       ON officer_inspection_record (from_date, to_date)",
+    ]),
+
 ]
 
 
