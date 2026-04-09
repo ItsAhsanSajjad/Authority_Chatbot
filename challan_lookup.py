@@ -49,6 +49,42 @@ _SPELLING_NORMS = {
     "saddar": "sadar",
     "saddr": "sadar",
     "suddar": "sadar",
+    # Khairpur / Khaipur variants
+    "khairpur": "khaipur",
+    "kherpur": "khaipur",
+    "khyerpur": "khaipur",
+    # Taimewali / Tamewali variants
+    "taimewali": "tamewali",
+    "tamey wali": "tamewali",
+    "taime wali": "tamewali",
+    # Muzaffargarh variants
+    "muzaffargarh": "muzaffar garh",
+    "muzafargarh": "muzaffar garh",
+    # Ferozepur variants
+    "ferozewala": "ferozwala",
+    "firozwala": "ferozwala",
+    # Bahawalpur variants
+    "bahwalpur": "bahawalpur",
+    # Rahim Yar Khan variants
+    "rahimyarkhan": "rahim yar khan",
+    # Chichawatni variants
+    "chicawatni": "chichawatni",
+    "chichawatani": "chichawatni",
+    # Sheikhupura variants
+    "shaikhupura": "sheikhupura",
+    "shekhupura": "sheikhupura",
+    # Nankana variants
+    "nankana sahab": "nankana sahib",
+    "nankanasahib": "nankana sahib",
+    # DG Khan variants
+    "dera ghazi khan": "dera ghazi khan",
+    "d g khan": "dera ghazi khan",
+    "dg khan": "dera ghazi khan",
+    # Pakpattan variants
+    "pakpatan": "pakpattan",
+    "pakpattan": "pakpattan sharif",
+    # Jhelum variants
+    "jehlum": "jhelum",
 }
 
 # Prefixes the user might add that aren't part of the actual location name
@@ -273,12 +309,16 @@ _MONTH_MAP = {
 _ISO_DATE = re.compile(r"\b(\d{4})[-/](\d{1,2})[-/](\d{1,2})\b")
 # DD/MM/YYYY or DD-MM-YYYY (Pakistani format preferred)
 _DMY_DATE = re.compile(r"\b(\d{1,2})[-/](\d{1,2})[-/](\d{4})\b")
-# "March 10, 2026" or "10 March 2026"
+# Ordinal suffix pattern: 1st, 2nd, 3rd, 4th, etc.
+_ORD = r"(?:st|nd|rd|th)?"
+
+# "10 March 2026" or "10th March 2026"
 _NAMED_DATE1 = re.compile(
-    r"\b(\d{1,2})\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)\w*[,]?\s+(\d{4})\b", re.I
+    rf"\b(\d{{1,2}}){_ORD}\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)\w*[,]?\s+(\d{{4}})\b", re.I
 )
+# "March 10, 2026" or "March 10th, 2026"
 _NAMED_DATE2 = re.compile(
-    r"\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)\w*\s+(\d{1,2})[,]?\s+(\d{4})\b", re.I
+    rf"\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)\w*\s+(\d{{1,2}}){_ORD}[,]?\s+(\d{{4}})\b", re.I
 )
 # Range connectors
 # English word order: "from X to Y", "between X and Y"
@@ -287,27 +327,76 @@ _RANGE_PATTERN = re.compile(
     r"(?:\s*\?|\s*$|\.(?!\d)|,(?!\s*\d))",
     re.I,
 )
+# Bare "X to Y" without from/between — date-like text on both sides of "to"
+_RANGE_PATTERN_BARE = re.compile(
+    r"\b(\d{1,2}(?:st|nd|rd|th)?\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)\w*"
+    r"(?:\s+\d{4})?)"
+    r"\s+(?:to|till|until)\s+"
+    r"(\d{1,2}(?:st|nd|rd|th)?\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)\w*"
+    r"(?:\s+\d{4})?)\b",
+    re.I,
+)
 # Urdu/Roman-Urdu word order: "X se/sy Y tak/tk"  (date comes before the connector)
 _RANGE_PATTERN_URDU = re.compile(
     r"(.+?)\s+(?:se|sy|say)\s+(.+?)\s+(?:tak|tk|tuk)"
     r"(?:\s|[?.!,]|$)",
     re.I,
 )
+# Word-to-number mapping (English + Roman Urdu)
+_WORD_TO_NUM = {
+    # English
+    "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+    "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
+    "eleven": 11, "twelve": 12, "thirteen": 13, "fourteen": 14, "fifteen": 15,
+    "twenty": 20, "thirty": 30,
+    # Roman Urdu
+    "ek": 1, "ik": 1, "aik": 1, "do": 2, "teen": 3, "char": 4, "panch": 5,
+    "chay": 6, "che": 6, "saat": 7, "sat": 7, "aath": 8, "aat": 8,
+    "nau": 9, "das": 10, "gyarah": 11, "barah": 12, "terah": 13,
+    "choda": 14, "pandrah": 15, "bees": 20, "tees": 30,
+}
+
+def _parse_number(text: str) -> Optional[int]:
+    """Parse a number from text — supports digits and word numbers."""
+    text = text.strip().lower()
+    if text.isdigit():
+        return int(text)
+    return _WORD_TO_NUM.get(text)
+
+# Number pattern for relative dates (digits or word numbers)
+_NUM_WORDS = "|".join(_WORD_TO_NUM.keys())
+_NUM_PATTERN = rf"(?:\d+|{_NUM_WORDS})"
+
 # Relative dates
 _RELATIVE_PATTERNS = {
-    "last_week": re.compile(r"\b(?:last|previous|guzashta)\s+(?:week|hafta|hafte)\b", re.I),
+    "last_week": re.compile(
+        r"\b(?:last|previous|guzashta|pichle?|pichy|pichhle?)\s+(?:week|hafta|hafte)\b", re.I
+    ),
     "this_week": re.compile(r"\b(?:this|is|current)\s+(?:week|hafta|hafte)\b", re.I),
-    "last_month": re.compile(r"\b(?:last|previous|guzashta)\s+(?:month|mahina|mahine)\b", re.I),
+    "last_month": re.compile(
+        r"\b(?:last|previous|guzashta|pichle?|pichy|pichhle?)\s+(?:month|mahina|mahine)\b", re.I
+    ),
     "this_month": re.compile(r"\b(?:this|is|current)\s+(?:month|mahina|mahine)\b", re.I),
-    "last_n_days": re.compile(r"\b(?:last|past|previous)\s+(\d+)\s+(?:days|din)\b", re.I),
+    "last_n_days": re.compile(
+        rf"\b(?:last|past|previous|pichle?|pichy|pichhle?)\s+({_NUM_PATTERN})\s+(?:days?|din)\b", re.I
+    ),
+    "last_n_weeks": re.compile(
+        rf"\b(?:last|past|previous|pichle?|pichy|pichhle?)\s+({_NUM_PATTERN})\s+(?:weeks?|hafta|hafte|hafton)\b", re.I
+    ),
+    "last_n_months": re.compile(
+        rf"\b(?:last|past|previous|pichle?|pichy|pichhle?)\s+({_NUM_PATTERN})\s+(?:months?|mahina|mahine|mahinon)\b", re.I
+    ),
+    "past_n_days": re.compile(
+        rf"\bpast\s+({_NUM_PATTERN})\s+(?:days?|din)\b", re.I
+    ),
 }
 
 
 _NAMED_DATE_NO_YEAR1 = re.compile(
-    r"\b(\d{1,2})\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)\w*\b", re.I
+    rf"\b(\d{{1,2}}){_ORD}\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)\w*\b", re.I
 )
 _NAMED_DATE_NO_YEAR2 = re.compile(
-    r"\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)\w*\s+(\d{1,2})\b", re.I
+    rf"\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)\w*\s+(\d{{1,2}}){_ORD}\b", re.I
 )
 # Month + year only (no day): "February 2025", "jan 2026"
 _MONTH_YEAR_ONLY = re.compile(
@@ -435,15 +524,29 @@ def _extract_date_range(question: str) -> Optional[Tuple[date, date]]:
                 return (last_month_start, last_month_end)
             elif key == "this_month":
                 return (today.replace(day=1), today)
-            elif key == "last_n_days":
-                n = int(m.group(1))
-                return (today - timedelta(days=n), today)
+            elif key in ("last_n_days", "past_n_days"):
+                n = _parse_number(m.group(1))
+                if n:
+                    # "past 7 days" = 7 calendar days including today
+                    return (today - timedelta(days=n - 1), today)
+            elif key == "last_n_weeks":
+                n = _parse_number(m.group(1))
+                if n:
+                    # "last 2 weeks" = 14 calendar days including today
+                    return (today - timedelta(days=n * 7 - 1), today)
+            elif key == "last_n_months":
+                n = _parse_number(m.group(1))
+                if n:
+                    # Approximate: 30 days per month, including today
+                    return (today - timedelta(days=n * 30 - 1), today)
 
     # 2. Check for explicit range: "between X to Y", "from X to Y", "X se Y tak"
     #    Must be BEFORE standalone month check so "between 1 jan to 15 jan 2026"
     #    isn't swallowed by the month pattern.
     #    Try both English and Urdu word-order patterns.
-    range_match = _RANGE_PATTERN.search(question) or _RANGE_PATTERN_URDU.search(question)
+    range_match = (_RANGE_PATTERN.search(question)
+                   or _RANGE_PATTERN_BARE.search(question)
+                   or _RANGE_PATTERN_URDU.search(question))
     if range_match:
         raw_start, raw_end = range_match.group(1).strip(), range_match.group(2).strip()
         start = _parse_single_date(raw_start)
@@ -472,6 +575,32 @@ def _extract_date_range(question: str) -> Optional[Tuple[date, date]]:
         if len(dates) >= 2:
             dates.sort()
             return (dates[0], dates[-1])
+
+    # 3b. Check for a SINGLE specific date: "20 March 2026", "March 20, 2026"
+    #     When only one date is found, use it as both start and end (same-day query).
+    single_date_match = _NAMED_DATE1.search(question) or _NAMED_DATE2.search(question)
+    if single_date_match:
+        single = _parse_single_date(single_date_match.group(0))
+        if single:
+            return (single, single)
+    # Also try yearless single dates with current year: "20 march", "march 20"
+    if not single_date_match:
+        _NAMED_DATE_NO_YEAR1_CHECK = re.compile(
+            rf"\b(\d{{1,2}}){_ORD}\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)\w*\b", re.I
+        )
+        _NAMED_DATE_NO_YEAR2_CHECK = re.compile(
+            rf"\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)\w*\s+(\d{{1,2}}){_ORD}\b", re.I
+        )
+        m = _NAMED_DATE_NO_YEAR1_CHECK.search(question)
+        if m:
+            single = _parse_single_date(m.group(0), default_year=today.year)
+            if single:
+                return (single, single)
+        m = _NAMED_DATE_NO_YEAR2_CHECK.search(question)
+        if m:
+            single = _parse_single_date(m.group(0), default_year=today.year)
+            if single:
+                return (single, single)
 
     # 4. Check for standalone month reference: "january 2026", "march 2026 mein"
     #    This comes AFTER explicit ranges so "between 1 jan to 15 jan 2026"
@@ -582,6 +711,12 @@ _COMPARISON_PATTERNS = [
     re.compile(r"\btop\b.*\bstation", re.I),
     re.compile(r"\brank\b|\branking\b", re.I),
     re.compile(r"\bcompare\b|\bcomparison\b", re.I),
+    # Roman Urdu comparison patterns
+    re.compile(r"\bsab\s*se\s*(?:ziada|zyada|ziyada)\b", re.I),   # sab se ziada (most)
+    re.compile(r"\bsab\s*se\s*(?:kam|kamm)\b", re.I),              # sab se kam (least)
+    re.compile(r"\bkon\s*(?:sa|se|si)?\b.*\b(?:ziada|zyada)\b", re.I),  # konsa ziada
+    re.compile(r"\bkis\s*(?:ne)?\b.*\b(?:ziada|zyada|ziyada)\b", re.I), # kisne ziada
+    re.compile(r"\b(?:ziada|zyada|ziyada)\b.*\bkis\b", re.I),     # ziada kis
 ]
 
 # Sub-patterns to detect which status the user asks about in comparisons
@@ -674,6 +809,33 @@ _REQTYPE_FOLLOWUP_RE = re.compile(
     r"kya\s+(?:type|qism)|requisition\s+type)\b",
     re.I,
 )
+_AMOUNT_FOLLOWUP_RE = re.compile(
+    r"\b(?:amount|amout|raqam|paisa|paisay|money|fine|fines|"
+    r"kitni\s+raqam|kitna\s+(?:paisa|amount)|total\s+(?:amount|fine|raqam)|"
+    r"paid\s+amount|outstanding|unpaid|pending\s+amount|"
+    r"tell\s+me\s+(?:amount|amout|fine|raqam)|"
+    r"amount\s+(?:batao|bata|kya|kitna|kitni))\b",
+    re.I,
+)
+_DETAIL_FOLLOWUP_RE = re.compile(
+    r"\b(?:detail[s]?|tafsilat|tafseel|breakdown|summary|"
+    r"more\s+(?:info|detail|data)|explain|batao|bata\s+do|"
+    r"tell\s+me\s+(?:more|detail|about))\b",
+    re.I,
+)
+_RANKING_FOLLOWUP_RE = re.compile(
+    r"\b(?:"
+    r"is\s*k[eay]?\s*ba[a]?d|usk[eay]?\s*ba[a]?d|usk[eay]?\s*baad|"   # is k bad, uske baad
+    r"phir\s*(?:kis|kon)|aur\s*(?:kis|kon)|"                            # phir kis, aur kon
+    r"next|second|third|2nd|3rd|dosr[aeiou]|tesr[aeiou]|"              # next, second, doosra
+    r"after\s*(?:him|her|this|that|them)|"                              # after him/this
+    r"(?:kis|kon)\s*ne\s*(?:ziada|zyada|ziyada)|"                      # kisne ziada
+    r"(?:ziada|zyada|ziyada)\s*(?:kis|kon)|"                           # ziada kisne
+    r"number\s*(?:2|3|two|three|do|teen)|"                              # number 2
+    r"runner\s*up|(?:sab\s*se\s*)?(?:kam|lowest|least)"                # runner up, sabse kam
+    r")\b",
+    re.I,
+)
 
 
 def detect_challan_followup(question: str, prev_intent: str) -> Optional[str]:
@@ -703,8 +865,12 @@ def detect_challan_followup(question: str, prev_intent: str) -> Optional[str]:
         r"\b(?:officer|officers)\b", q, re.I
     )
     wants_location = _LOCATION_FOLLOWUP_RE.search(q)
+    wants_amount = _AMOUNT_FOLLOWUP_RE.search(q)
+    wants_detail = _DETAIL_FOLLOWUP_RE.search(q)
+    wants_ranking = _RANKING_FOLLOWUP_RE.search(q)
 
-    if not wants_officer and not wants_location:
+    if not wants_officer and not wants_location and not wants_amount \
+       and not wants_detail and not wants_ranking:
         return None  # Can't determine follow-up type
 
     # Parse the previous intent to extract date-range & location context
@@ -748,6 +914,11 @@ def detect_challan_followup(question: str, prev_intent: str) -> Optional[str]:
         elif sub_intent.startswith("challan_location:"):
             if len(parts) >= 3:
                 loc_type, loc_name = parts[1], parts[2]
+
+    # For amount/detail/ranking follow-ups, reuse the previous intent
+    # so the LLM gets the same context and can answer from it
+    if wants_amount or wants_detail or wants_ranking:
+        return prev_intent
 
     if not loc_type or not loc_name:
         return None  # No location context to carry forward
@@ -839,7 +1010,11 @@ def _route_challan_question_core(q: str) -> str:
                 detected_req_keys.append(req_key)
 
         # Determine which hierarchy level to compare
-        _officer_re = re.compile(r"\b(?:officer|officers|imposed\s+by|issued\s+by)\b", re.I)
+        _officer_re = re.compile(
+            r"\b(?:officer[s]?|imposed\s+by|issued\s+by|"
+            r"kis\s+officer|officer\s+ne|"
+            r"kon\s*(?:sa|se|si)?\s+officer)\b", re.I
+        )
         if _officer_re.search(q):
             level = "officer"
         elif any(p.search(q) for p in _DIVISION_PATTERNS):
@@ -1544,17 +1719,32 @@ def _lookup_daterange(start_str: str, end_str: str,
 
 def _format_daterange_summary(rows, date_label: str, title: str,
                               note: str = "") -> Optional[Dict]:
-    """Format a date-range summary (status breakdown)."""
+    """Format a date-range summary (status breakdown).
+    Combines 'unpaid' and 'overdue' into a single 'Unpaid' category to match PERA dashboard.
+    """
     if not rows:
         no_msg = f"No challan records found for the period {date_label}."
         ctx = (f"[Source Type: API]\n[Date Range: {date_label}]\n"
                f"[Result: NO DATA FOUND]\n\n{no_msg}")
         return _build_result("challan_daterange", title, [], no_msg, ctx)
 
-    grand_total = 0
-    grand_fine = 0.0
-    grand_paid = 0.0
-    grand_outstanding = 0.0
+    # Aggregate into two categories: Paid vs Unpaid (= unpaid + overdue)
+    paid_cnt = 0; paid_fine = 0.0; paid_paid = 0.0
+    unpaid_cnt = 0; unpaid_fine = 0.0; unpaid_outstanding = 0.0
+    for r in rows:
+        st = (r.get("status") or "unknown").lower()
+        cnt = r.get("total_challans", 0) or 0
+        fine = float(r.get("total_fine", 0) or 0)
+        paid_amt = float(r.get("total_paid", 0) or 0)
+        outstanding = float(r.get("total_outstanding", 0) or 0)
+        if st == "paid":
+            paid_cnt += cnt; paid_fine += fine; paid_paid += paid_amt
+        else:  # unpaid + overdue → Unpaid
+            unpaid_cnt += cnt; unpaid_fine += fine; unpaid_outstanding += outstanding
+
+    grand_total = paid_cnt + unpaid_cnt
+    grand_fine = paid_fine + unpaid_fine
+
     lines = [f"**{title}**\n"]
     ctx_lines = [
         "[Source Type: API]",
@@ -1564,32 +1754,18 @@ def _format_daterange_summary(rows, date_label: str, title: str,
     if note:
         ctx_lines.append(note)
     ctx_lines.extend(["", f"{title}:", ""])
-    for r in rows:
-        st = r.get("status", "unknown")
-        cnt = r.get("total_challans", 0) or 0
-        fine = r.get("total_fine", 0) or 0
-        paid = r.get("total_paid", 0) or 0
-        outstanding = r.get("total_outstanding", 0) or 0
-        grand_total += cnt
-        grand_fine += float(fine)
-        grand_paid += float(paid)
-        grand_outstanding += float(outstanding)
-        line = f"- **{st.title()}**: {_fnum(cnt)} challans | Fine: Rs. {_fnum(fine)}"
-        if paid:
-            line += f" | Paid: Rs. {_fnum(paid)}"
-        if outstanding:
-            line += f" | Outstanding: Rs. {_fnum(outstanding)}"
-        lines.append(line)
-        ctx_lines.append(
-            f"{st.title()}: {_fnum(cnt)} challans | Fine: Rs. {_fnum(fine)}"
-            + (f" | Paid: Rs. {_fnum(paid)}" if paid else "")
-            + (f" | Outstanding: Rs. {_fnum(outstanding)}" if outstanding else "")
-        )
 
-    lines.append(f"\n**Total**: {_fnum(grand_total)} challans | Fine: Rs. {_fnum(grand_fine)}"
-                 f" | Paid: Rs. {_fnum(grand_paid)} | Outstanding: Rs. {_fnum(grand_outstanding)}")
-    ctx_lines.append(f"\nTotal: {_fnum(grand_total)} challans | Fine: Rs. {_fnum(grand_fine)}"
-                     f" | Paid: Rs. {_fnum(grand_paid)} | Outstanding: Rs. {_fnum(grand_outstanding)}")
+    # Paid
+    lines.append(f"- **Paid**: {_fnum(paid_cnt)} challans | Amount Paid: Rs. {_fnum(paid_paid)}")
+    ctx_lines.append(f"Paid: {_fnum(paid_cnt)} challans | Amount Paid: Rs. {_fnum(paid_paid)}")
+    # Unpaid (combined)
+    lines.append(f"- **Unpaid**: {_fnum(unpaid_cnt)} challans | Outstanding Amount: Rs. {_fnum(unpaid_outstanding)}")
+    ctx_lines.append(f"Unpaid: {_fnum(unpaid_cnt)} challans | Outstanding Amount: Rs. {_fnum(unpaid_outstanding)}")
+
+    lines.append(f"\n**Total**: {_fnum(grand_total)} challans | Total Fine: Rs. {_fnum(grand_fine)}"
+                 f" | Paid: Rs. {_fnum(paid_paid)} | Unpaid/Outstanding: Rs. {_fnum(unpaid_outstanding)}")
+    ctx_lines.append(f"\nTotal: {_fnum(grand_total)} challans | Total Fine: Rs. {_fnum(grand_fine)}"
+                     f" | Paid: Rs. {_fnum(paid_paid)} | Unpaid/Outstanding: Rs. {_fnum(unpaid_outstanding)}")
 
     return _build_result(
         "challan_daterange", title,
@@ -1760,17 +1936,32 @@ def _format_daterange_officer_detail(
 def _format_daterange_location_detail(
     summary_rows, officer_rows, date_label: str, title: str, loc_name: str,
 ) -> Optional[Dict]:
-    """Format a location date-range query with per-officer breakdown for accuracy."""
+    """Format a location date-range query with per-officer breakdown for accuracy.
+    Combines 'unpaid' and 'overdue' into a single 'Unpaid' category to match PERA dashboard.
+    """
     if not summary_rows:
         no_msg = f"No challan records found for {loc_name} in the period {date_label}."
         ctx = (f"[Source Type: API]\n[Date Range: {date_label}]\n"
                f"[Result: NO DATA FOUND]\n\n{no_msg}")
         return _build_result("challan_daterange", title, [], no_msg, ctx)
 
-    grand_total = 0
-    grand_fine = 0.0
-    grand_paid = 0.0
-    grand_outstanding = 0.0
+    # Aggregate into two categories: Paid vs Unpaid (= unpaid + overdue)
+    paid_cnt = 0; paid_fine = 0.0; paid_paid = 0.0
+    unpaid_cnt = 0; unpaid_fine = 0.0; unpaid_outstanding = 0.0
+    for r in summary_rows:
+        st = (r.get("status") or "unknown").lower()
+        cnt = r.get("total_challans", 0) or 0
+        fine = float(r.get("total_fine", 0) or 0)
+        paid_amt = float(r.get("total_paid", 0) or 0)
+        outstanding = float(r.get("total_outstanding", 0) or 0)
+        if st == "paid":
+            paid_cnt += cnt; paid_fine += fine; paid_paid += paid_amt
+        else:  # unpaid + overdue → Unpaid
+            unpaid_cnt += cnt; unpaid_fine += fine; unpaid_outstanding += outstanding
+
+    grand_total = paid_cnt + unpaid_cnt
+    grand_fine = paid_fine + unpaid_fine
+
     lines = [f"**{title}**\n"]
     ctx_lines = [
         "[Source Type: API]",
@@ -1781,34 +1972,20 @@ def _format_daterange_location_detail(
         " removed. Each challan is counted ONCE using the latest snapshot.]",
         "", f"{title}:", "",
     ]
-    for r in summary_rows:
-        st = r.get("status", "unknown")
-        cnt = r.get("total_challans", 0) or 0
-        fine = r.get("total_fine", 0) or 0
-        paid = r.get("total_paid", 0) or 0
-        outstanding = r.get("total_outstanding", 0) or 0
-        grand_total += cnt
-        grand_fine += float(fine)
-        grand_paid += float(paid)
-        grand_outstanding += float(outstanding)
-        line = f"- **{st.title()}**: {_fnum(cnt)} challans | Fine: Rs. {_fnum(fine)}"
-        if paid:
-            line += f" | Paid: Rs. {_fnum(paid)}"
-        if outstanding:
-            line += f" | Outstanding: Rs. {_fnum(outstanding)}"
-        lines.append(line)
-        ctx_lines.append(
-            f"{st.title()}: {_fnum(cnt)} challans | Fine: Rs. {_fnum(fine)}"
-            + (f" | Paid: Rs. {_fnum(paid)}" if paid else "")
-            + (f" | Outstanding: Rs. {_fnum(outstanding)}" if outstanding else "")
-        )
+
+    # Paid
+    lines.append(f"- **Paid**: {_fnum(paid_cnt)} challans | Amount Paid: Rs. {_fnum(paid_paid)}")
+    ctx_lines.append(f"Paid: {_fnum(paid_cnt)} challans | Amount Paid: Rs. {_fnum(paid_paid)}")
+    # Unpaid (combined unpaid + overdue)
+    lines.append(f"- **Unpaid**: {_fnum(unpaid_cnt)} challans | Outstanding Amount: Rs. {_fnum(unpaid_outstanding)}")
+    ctx_lines.append(f"Unpaid: {_fnum(unpaid_cnt)} challans | Outstanding Amount: Rs. {_fnum(unpaid_outstanding)}")
 
     lines.append(f"\n**Total**: {_fnum(grand_total)} challans | "
-                 f"Fine: Rs. {_fnum(grand_fine)} | Paid: Rs. {_fnum(grand_paid)}"
-                 f" | Outstanding: Rs. {_fnum(grand_outstanding)}")
+                 f"Total Fine: Rs. {_fnum(grand_fine)} | Paid: Rs. {_fnum(paid_paid)}"
+                 f" | Unpaid/Outstanding: Rs. {_fnum(unpaid_outstanding)}")
     ctx_lines.append(f"\nTotal: {_fnum(grand_total)} challans | "
-                     f"Fine: Rs. {_fnum(grand_fine)} | Paid: Rs. {_fnum(grand_paid)}"
-                     f" | Outstanding: Rs. {_fnum(grand_outstanding)}")
+                     f"Total Fine: Rs. {_fnum(grand_fine)} | Paid: Rs. {_fnum(paid_paid)}"
+                     f" | Unpaid/Outstanding: Rs. {_fnum(unpaid_outstanding)}")
 
     # Add per-officer breakdown
     if officer_rows:
