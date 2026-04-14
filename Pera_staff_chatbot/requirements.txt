@@ -1,0 +1,54 @@
+# ============================================================
+# Core Dependencies (AI/RAG + Utilities)
+# ============================================================
+openai                  # OpenAI API client
+numpy                   # Numerical computing
+faiss-cpu               # Vector similarity search (CPU)
+python-dotenv           # Environment variable management (.env)
+PyYAML                  # YAML config parsing (API source configs)
+pypdf                   # PDF parsing and text extraction
+python-docx             # DOCX parsing and text extraction (extractors.py)
+pdfplumber              # Table-aware PDF extraction (extractors.py, optional but recommended)
+
+# ============================================================
+# Configuration & Validation
+# ============================================================
+pydantic                # Data validation / schemas
+pydantic-settings       # Environment-driven settings (BaseSettings)
+
+# ============================================================
+# FastAPI Backend (REST API + File Uploads)
+# ============================================================
+fastapi                 # FastAPI framework
+uvicorn[standard]       # ASGI server (includes websockets, httptools, watchdog)
+starlette               # FastAPI dependency (routing, middleware, static files)
+python-multipart        # Multipart/form-data support (file uploads)
+
+# ============================================================
+# Auth & Security
+# ============================================================
+PyJWT                   # JWT token verification
+slowapi                 # Rate limiting middleware for FastAPI
+
+# ============================================================
+# Session Persistence
+# ============================================================
+redis                   # Redis client for session storage
+aioredis                # Async Redis (optional, for future async support)
+
+# ============================================================
+# Analytics Database (PostgreSQL)
+# ============================================================
+psycopg[binary]             # PostgreSQL adapter (v3) for analytics DB
+
+# ============================================================
+# Testing
+# ============================================================
+pytest                  # Test framework
+httpx                   # Async HTTP client (FastAPI TestClient)
+pytest-asyncio          # Async test support
+
+# ============================================================
+# Streamlit UI (Legacy — see legacy/app.py)
+# ============================================================
+streamlit               # Streamlit app framework

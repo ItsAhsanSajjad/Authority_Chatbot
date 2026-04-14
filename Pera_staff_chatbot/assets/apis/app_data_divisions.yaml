@@ -1,0 +1,74 @@
+# ──────────────────────────────────────────────────────────────
+# PERA360 API: App Data Divisions
+# Production endpoint — division reference data
+# ──────────────────────────────────────────────────────────────
+
+source_id: app_data_divisions
+source_type: api
+display_name: "PERA App Data Divisions"
+enabled: true
+
+fetch:
+  method: GET
+  url: https://pera360.punjab.gov.pk/backend/api/app-data/divisions
+  headers:
+    Accept: application/json
+  timeout_seconds: 30
+  retry_count: 3
+  retry_backoff_seconds: 2
+  pagination:
+    type: none
+
+auth:
+  type: none
+
+sync:
+  interval_minutes: 360
+  full_refresh_every_hours: 24
+  delete_missing_records: true
+
+normalization:
+  root_selector: "__root__"
+  record_id_field: id
+  record_type: division
+  include_fields:
+    - id
+    - name
+    - districtId
+    - districtName
+  exclude_fields: []
+  nested_strategy: flatten
+  text_template: |
+    Division reference record.
+    Division ID: {id}
+    Division Name: {name}
+    District ID: {districtId}
+    District Name: {districtName}
+
+indexing:
+  authority: 3
+  tags:
+    - pera
+    - reference
+    - divisions
+
+# ── Query-Time Lookup (auto-discovered by api_lookup_registry) ──
+lookup:
+  enabled: true
+  keywords:
+    - division
+    - divisions
+    - district
+    - districts
+  keyword_patterns:
+    - "\\b(?:division|divisions|list\\s+(?:all\\s+)?divisions?)\\b"
+    - "\\b(?:show|available|pera|what|which|punjab)\\s+divisions?\\b"
+    - "\\b(?:how\\s+many\\s+divisions?|division\\s+names?)\\b"
+  title: "PERA Divisions"
+  subtitle: "({count} divisions)"
+  sort_by: name
+  record_template: "- **{name}** (ID: {id})"
+  context_title: "Complete list of PERA divisions"
+  context_record_template: "- Division: {name} (ID: {id})"
+  live_title: "Live Data: PERA Divisions"
+  live_max_records: 50

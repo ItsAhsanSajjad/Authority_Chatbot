@@ -1,0 +1,52 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+venv/
+venv311/
+.venv/
+*.egg
+
+# Environment
+.env
+.env.local
+.env.production
+
+# Node / Frontend
+frontend/node_modules/
+frontend/.next/
+frontend/.env*
+
+# Data & indexes (large/generated)
+data/
+indexes/
+*.index
+*.faiss
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs & audit
+nohup.out
+audit_logs/
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# pytest
+.pytest_cache/
+htmlcov/
+.coverage
+
+# OS files
+Thumbs.db
+.DS_Store

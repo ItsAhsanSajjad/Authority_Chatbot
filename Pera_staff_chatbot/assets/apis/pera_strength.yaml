@@ -1,0 +1,102 @@
+# ──────────────────────────────────────────────────────────────
+# PERA360 API: PERA Strength
+# Production endpoint — workforce strength by division
+# ──────────────────────────────────────────────────────────────
+
+source_id: pera_strength
+source_type: api
+display_name: "PERA Strength"
+enabled: true
+
+fetch:
+  method: GET
+  url: https://pera360.punjab.gov.pk/backend/api/pera-strength
+  headers:
+    Accept: application/json
+  timeout_seconds: 30
+  retry_count: 3
+  retry_backoff_seconds: 2
+  pagination:
+    type: none
+
+auth:
+  type: none
+
+sync:
+  interval_minutes: 60
+  full_refresh_every_hours: 12
+  delete_missing_records: true
+
+normalization:
+  root_selector: series
+  record_id_field: id
+  record_type: pera_strength_division
+  include_fields:
+    - id
+    - divisionId
+    - divisionName
+    - total
+    - onDuty
+    - absent
+  exclude_fields:
+    - districtId
+    - districtName
+    - tehsilId
+    - tehsilName
+    - name
+  nested_strategy: flatten
+  text_template: |
+    PERA strength record for division.
+    Division ID: {divisionId}
+    Division Name: {divisionName}
+    Total Strength: {total}
+    On Duty: {onDuty}
+    Absent: {absent}
+
+indexing:
+  authority: 3
+  tags:
+    - pera
+    - strength
+    - workforce
+    - dashboard
+
+# ── Query-Time Lookup (auto-discovered by api_lookup_registry) ──
+lookup:
+  enabled: true
+  keywords:
+    - strength
+    - workforce
+    - on duty
+    - absent
+    - manpower
+    - personnel
+    - headcount
+    - attendance
+    - kitni tadadd
+  keyword_patterns:
+    - "\\b(?:strength|workforce|on\\s*duty|absent|manpower)\\b"
+    - "\\b(?:employees?|staff)\\s+(?:count|number|strength)\\b"
+    - "\\b(?:pera\\s+strength|total\\s+(?:staff|employees|personnel))\\b"
+    - "\\b(?:kitni\\s+tadadd|personnel|headcount)\\b"
+    - "\\b(?:how\\s+many\\s+(?:staff|employees|people))\\b"
+    - "\\b(?:attendance|duty\\s+status)\\b"
+  title: "PERA Workforce Strength"
+  subtitle: "({count} divisions)"
+  sort_by: divisionName
+  sort_fallback: name
+  name_field: divisionName
+  name_fallback: name
+  record_template: "- **{_name}**: Total {total}, On Duty {onDuty}, Absent {absent}"
+  context_title: "PERA Workforce Strength Summary"
+  context_record_template: "- {_name}: Total {total}, On Duty {onDuty}, Absent {absent}"
+  aggregations:
+    - field: total
+      label: Total
+    - field: onDuty
+      label: On Duty
+    - field: absent
+      label: Absent
+  summary_template: "**Overall**: Total {Total}, On Duty {On Duty}, Absent {Absent}"
+  live_title: "Live Data: PERA Workforce Strength"
+  live_max_records: 50
