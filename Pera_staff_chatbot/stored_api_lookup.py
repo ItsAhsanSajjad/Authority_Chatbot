@@ -159,9 +159,16 @@ def build_lookup_retrieval(
     if not consolidated_text:
         consolidated_text = build_evidence_context(sid, records)
 
-    record_ids = ",".join(
-        str(r.get("id", r.get("record_id", ""))) for r in records
-    )
+    # Limit record_ids to first 50 to avoid enormous strings that blow
+    # the MAX_EVIDENCE_CHARS budget in the answerer assembly loop.
+    _MAX_REC_IDS = 50
+    _all_ids = [str(r.get("id", r.get("record_id", ""))) for r in records if r.get("id") or r.get("record_id")]
+    if not _all_ids:
+        record_ids = f"{len(records)}_records"
+    elif len(_all_ids) > _MAX_REC_IDS:
+        record_ids = ",".join(_all_ids[:_MAX_REC_IDS]) + f"...(+{len(_all_ids) - _MAX_REC_IDS} more)"
+    else:
+        record_ids = ",".join(_all_ids)
 
     single_hit = {
         "text": consolidated_text,

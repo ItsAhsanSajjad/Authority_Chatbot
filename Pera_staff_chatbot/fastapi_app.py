@@ -444,6 +444,8 @@ def _group_references_like_streamlit(refs: List[Dict[str, Any]]) -> List[Dict[st
     return out
 
 
+# ── Debug: officer detection test ────────────────────────────
+
 # ============================================================
 # Download endpoint (kept) - forces download
 # ============================================================
@@ -649,11 +651,50 @@ class SimpleChatResponse(BaseModel):
 
 import re as _re_ru
 
+# ── Common typo / misspelling corrections ────────────────────────────────────
+# Runs on ALL queries before any routing or intent detection.
+# Maps common misspellings to correct English so intent keywords match.
+_TYPO_CORRECTIONS = [
+    # inspection typos
+    (_re_ru.compile(r"\binpections?\b", _re_ru.I), "inspections"),
+    (_re_ru.compile(r"\binspections?\b", _re_ru.I), lambda m: m.group(0)),  # no-op, already correct
+    (_re_ru.compile(r"\binsepctions?\b", _re_ru.I), "inspections"),
+    (_re_ru.compile(r"\binspectons?\b", _re_ru.I), "inspections"),
+    (_re_ru.compile(r"\binspcetions?\b", _re_ru.I), "inspections"),
+    (_re_ru.compile(r"\binspetions?\b", _re_ru.I), "inspections"),
+    # summary typos
+    (_re_ru.compile(r"\bsammary\b", _re_ru.I), "summary"),
+    (_re_ru.compile(r"\bsummry\b", _re_ru.I), "summary"),
+    (_re_ru.compile(r"\bsumary\b", _re_ru.I), "summary"),
+    (_re_ru.compile(r"\bsummari\b", _re_ru.I), "summary"),
+    (_re_ru.compile(r"\bsumery\b", _re_ru.I), "summary"),
+    (_re_ru.compile(r"\bsummey\b", _re_ru.I), "summary"),
+    # challan typos
+    (_re_ru.compile(r"\bchallns?\b", _re_ru.I), "challans"),
+    (_re_ru.compile(r"\bchalans?\b", _re_ru.I), "challans"),
+    (_re_ru.compile(r"\bchallanz?\b", _re_ru.I), "challans"),
+    # division typos
+    (_re_ru.compile(r"\bdivisons?\b", _re_ru.I), "divisions"),
+    (_re_ru.compile(r"\bdevisions?\b", _re_ru.I), "divisions"),
+]
+
+def _fix_typos(text: str) -> str:
+    """Fix common misspellings of domain keywords."""
+    result = text
+    for pattern, replacement in _TYPO_CORRECTIONS:
+        if callable(replacement):
+            result = pattern.sub(replacement, result)
+        else:
+            result = pattern.sub(replacement, result)
+    return result
+
 # ── Roman Urdu → English preprocessing ───────────────────────────────────────
 # Translates key Roman Urdu words/phrases to English equivalents so the LLM
 # and retriever can correctly parse date ranges, quantities, locations, etc.
 _RU_WORD_MAP = [
-    # Date-range markers (most important — "10 march sy 14 march tk" → "from 10 march to 14 march")
+    # Preserve "sab sy/se ziada" (= most) BEFORE translating sy/se → from
+    (_re_ru.compile(r"\bsab\s+s[ey]\s+(?:ziada|zyada|ziyada)\b", _re_ru.IGNORECASE), "most"),
+    # Date-range markers: sy/se → from, tk/tak → to
     (_re_ru.compile(r"\bsy\b",   _re_ru.IGNORECASE), "from"),
     (_re_ru.compile(r"\bse\b",   _re_ru.IGNORECASE), "from"),
     (_re_ru.compile(r"\btk\b",   _re_ru.IGNORECASE), "to"),
@@ -737,7 +778,7 @@ def _preprocess_roman_urdu(text: str) -> str:
 def simple_ask(request: Request, body: SimpleChatRequest):
     """Chat endpoint with session tracking, smalltalk bypass, entity anchoring, and audit trail."""
     # Translate Roman Urdu to English before any processing
-    question = _preprocess_roman_urdu(body.question.strip())
+    question = _fix_typos(_preprocess_roman_urdu(body.question.strip()))
     rid = getattr(request.state, "request_id", "")
 
     # ── 0a. Validate and normalize source mode ─────────────────
@@ -876,21 +917,34 @@ def simple_ask(request: Request, body: SimpleChatRequest):
 
     lookup_type = None
     lookup_result = None
+    _is_followup = False
     if source_mode in ("stored_api", "both"):
         # ── Follow-up detection FIRST ──────────────────────────────
         # When there's a previous lookup context (e.g. oa_tehsil:Shalimar),
         # follow-up questions like "in k against kitny challans?" should
         # carry forward that context. If we run direct intent detection
         # first, it loses the location and returns oa_summary.
-        if session.last_lookup_type:
+
+        # Fallback: if session has no last_lookup_type (e.g. fresh session
+        # after restart or incognito), try to infer it from the previous
+        # user question in conversation_history.
+        _prev_lookup = session.last_lookup_type
+        if not _prev_lookup and last_question_client:
+            _prev_lookup = detect_lookup_intent(last_question_client)
+            if _prev_lookup:
+                log.info("Inferred prev lookup from client history: '%s' -> %s",
+                         last_question_client[:60], _prev_lookup)
+
+        if _prev_lookup:
             # 1. OA follow-up (including cross-domain OA→Challan)
             try:
                 from operational_activity_lookup import detect_oa_followup
-                followup_intent = detect_oa_followup(question, session.last_lookup_type)
+                followup_intent = detect_oa_followup(question, _prev_lookup)
                 if followup_intent:
                     lookup_type = followup_intent
+                    _is_followup = True
                     log.info("OA follow-up detected: '%s' -> %s (prev=%s)",
-                             question[:60], followup_intent, session.last_lookup_type)
+                             question[:60], followup_intent, _prev_lookup)
             except ImportError:
                 pass
 
@@ -898,22 +952,24 @@ def simple_ask(request: Request, body: SimpleChatRequest):
             if not lookup_type:
                 try:
                     from inspection_lookup import detect_inspection_followup
-                    followup_intent = detect_inspection_followup(question, session.last_lookup_type)
+                    followup_intent = detect_inspection_followup(question, _prev_lookup)
                     if followup_intent:
                         lookup_type = followup_intent
+                        _is_followup = True
                         log.info("Inspection follow-up detected: '%s' -> %s (prev=%s)",
-                                 question[:60], followup_intent, session.last_lookup_type)
+                                 question[:60], followup_intent, _prev_lookup)
                 except ImportError:
                     pass
 
             # 3. Challan follow-up (only if OA/Inspection didn't match)
             if not lookup_type:
                 from challan_lookup import detect_challan_followup
-                followup_intent = detect_challan_followup(question, session.last_lookup_type)
+                followup_intent = detect_challan_followup(question, _prev_lookup)
                 if followup_intent:
                     lookup_type = followup_intent
+                    _is_followup = True
                     log.info("Challan follow-up detected: '%s' -> %s (prev=%s)",
-                             question[:60], followup_intent, session.last_lookup_type)
+                             question[:60], followup_intent, _prev_lookup)
 
         # ── Direct intent detection (if no follow-up matched) ─────
         if not lookup_type:
@@ -921,17 +977,45 @@ def simple_ask(request: Request, body: SimpleChatRequest):
             # keywords (e.g. adding "challans" to a pure requisition
             # question) which would cause false cross-domain routing.
             lookup_type = detect_lookup_intent(question)
+            log.debug("Direct intent (original): '%s' -> %s", question[:80], lookup_type)
             if not lookup_type:
                 # Fallback: check rewritten query (may have resolved dates/context)
                 lookup_type = detect_lookup_intent(query_for_retrieval)
+                log.debug("Direct intent (rewritten): '%s' -> %s",
+                         (query_for_retrieval or "")[:80], lookup_type)
             # For structured queries in "both" mode, also try lookup detection
             if not lookup_type and query_class == QueryType.STRUCTURED:
                 lookup_type = detect_lookup_intent(question)
 
+    # _is_followup stays True only when the follow-up detectors (OA/Insp/Challan)
+    # set the lookup_type. Direct intent detection does NOT count as a follow-up.
+    # (The flag was already initialised to False before the follow-up block;
+    #  we must NOT reset it here or we lose the follow-up signal.)
+
     if lookup_type:
-        # Pass both original and rewritten question — rewritten may have
-        # resolved pronouns/dates from conversation context
-        _lookup_q = query_for_retrieval if query_for_retrieval != question else question
+        # ALWAYS use the ORIGINAL user question for lookup execution (date
+        # extraction, location parsing etc.).  The LLM-rewritten query can
+        # fabricate dates from conversation history (e.g. "last week" gets
+        # rewritten to "March 10 to March 20" from a previous turn).
+        _lookup_q = question
+        # For follow-ups, only prepend previous question when the current
+        # question has NO dates of its own.  Otherwise the old dates
+        # override whatever the user actually asked for.
+        if _is_followup and lq:
+            # Check if current question already has dates
+            _cur_has_dates = False
+            try:
+                from challan_lookup import _extract_date_range as _edr
+                _cur_dates = _edr(_lookup_q)
+                if _cur_dates and _cur_dates[0]:
+                    _cur_has_dates = True
+            except Exception:
+                pass
+            if not _cur_has_dates:
+                _lookup_q = f"{lq} {_lookup_q}"
+                log.info("Follow-up (no new dates): combined question for context: '%s'", _lookup_q[:120])
+            else:
+                log.info("Follow-up (has own dates): using current question only: '%s'", _lookup_q[:120])
         lookup_result = execute_lookup(lookup_type, question=_lookup_q)
         log.info("API lookup detected (type=%s, mode=%s, found=%s)",
                  lookup_type, source_mode, bool(lookup_result))
@@ -1001,13 +1085,15 @@ def simple_ask(request: Request, body: SimpleChatRequest):
     # instead of "salary of this?")
     question_for_llm = anchored_q if was_anchored else question
     # For vague follow-ups ("tell me in detail"), use the rewritten query which
-    # has the full context resolved from conversation history
+    # has the full context resolved from conversation history.
+    # Combine with original question so user's intent keywords ("in amount",
+    # "in detail") survive the rewrite and guide the LLM answer.
     if lookup_type and query_for_retrieval and query_for_retrieval != question:
         _q_words = len(question.split())
         if _q_words <= 8:  # short/vague follow-up
-            question_for_llm = query_for_retrieval
-            log.info("Using rewritten query for LLM (vague follow-up): '%s'",
-                     query_for_retrieval[:100])
+            question_for_llm = f"{question} — {query_for_retrieval}"
+            log.info("Using combined query for LLM (vague follow-up): '%s'",
+                     question_for_llm[:120])
     result = answer_question(
         question_for_llm,
         retrieval,

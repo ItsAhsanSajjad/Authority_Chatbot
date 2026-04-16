@@ -233,8 +233,12 @@ def format_evidence_for_llm(retrieval: Dict[str, Any], question: str = "") -> st
 
     # Flatten all hits across doc groups for unified position-aware scoring
     all_hits = []
+    log.debug("Evidence groups: %d, has_primary=%s", len(evidence_list), has_primary_lookup)
     for doc_group in evidence_list:
         doc_name = (doc_group.get("doc_name", "Unknown Document") or "Unknown Document").strip()
+        log.info("  Doc group: '%s', hits=%d, primary=%s, supplementary=%s",
+                 doc_name[:60], len(doc_group.get("hits", [])),
+                 doc_group.get("_is_primary_lookup"), doc_group.get("_is_supplementary"))
         for hit in doc_group.get("hits", []):
             hit["_doc_name"] = doc_name
             # Propagate supplementary flag from doc group
@@ -301,6 +305,14 @@ def format_evidence_for_llm(retrieval: Dict[str, Any], question: str = "") -> st
         combined = subject_match + title_bonus + heading_bonus + base_score
         scored_hits.append((combined, hit))
 
+    log.debug("Scored hits: %d from %d all_hits (target_role='%s')",
+             len(scored_hits), len(all_hits), target_role or "")
+    if scored_hits:
+        top = scored_hits[0]
+        log.debug("  Top hit: score=%.3f, doc='%s', primary=%s, text_len=%d",
+                 top[0], top[1].get("_doc_name", "?")[:50],
+                 top[1].get("_is_primary_lookup"), len(top[1].get("text", "")))
+
     # FALLBACK: If position filter dropped ALL position-titled chunks,
     # re-scan and keep top hits by subject_match + base_score only.
     # This prevents zero-evidence scenarios when the target role exists
@@ -354,13 +366,15 @@ def format_evidence_for_llm(retrieval: Dict[str, Any], question: str = "") -> st
             record_id = hit.get("record_id", "")
             record_type = hit.get("record_type", "")
             api_source_id = hit.get("api_source_id", "")
+            # Truncate record_id in XML attributes to avoid blowing
+            # MAX_EVIDENCE_CHARS with thousands of comma-separated IDs
+            short_rid = record_id[:200] + "..." if len(record_id) > 200 else record_id
             part = (
                 f'<evidence doc="{safe_doc}" source_type="api" '
-                f'record_id="{record_id}" record_type="{record_type}" '
+                f'record_type="{record_type}" '
                 f'api_source="{api_source_id}" eid="{eid}">\n'
                 f'[Source Type: API]\n'
                 f'[API Name: {safe_doc}]\n'
-                f'[Record ID: {record_id}]\n'
                 f'[Record Type: {record_type}]\n'
                 f"{text}\n"
                 f"</evidence>"
@@ -669,14 +683,16 @@ def extract_references_simple(
 
         if is_api:
             record_id = hit.get("record_id", "")
-            key = f"api:{doc_name}:{record_id}"
+            # Use truncated record_id for dedup key and reference display
+            short_rid = record_id[:200] if len(record_id) > 200 else record_id
+            key = f"api:{doc_name}:{short_rid}"
             if key in seen:
                 continue
             seen.add(key)
 
             ref = _cf.format_api_reference(
                 display_name=doc_name,
-                record_id=record_id,
+                record_id=short_rid,
                 record_type=hit.get("record_type", ""),
                 source_id=hit.get("api_source_id", ""),
                 snippet=(hit.get("text") or "")[:200],

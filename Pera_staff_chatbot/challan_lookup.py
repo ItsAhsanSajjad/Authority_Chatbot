@@ -297,7 +297,7 @@ def _find_all_matches_in_question(question: str) -> List[Tuple[str, str]]:
 # ── Date Range Detection ────────────────────────────────────
 
 _MONTH_MAP = {
-    "jan": 1, "january": 1, "feb": 2, "february": 2,
+    "jan": 1, "january": 1, "fab": 2, "feb": 2, "february": 2,
     "mar": 3, "march": 3, "apr": 4, "april": 4,
     "may": 5, "jun": 6, "june": 6, "jul": 7, "july": 7,
     "aug": 8, "august": 8, "sep": 9, "september": 9, "sept": 9,
@@ -323,7 +323,7 @@ _NAMED_DATE2 = re.compile(
 # Range connectors
 # English word order: "from X to Y", "between X and Y"
 _RANGE_PATTERN = re.compile(
-    r"(?:between|from)\s+(.+?)\s+(?:to|and|till|until)\s+(.+?)"
+    r"(?:between|from)\s+(.+?)\s+(?:to|t0|and|till|until)\s+(.+?)"
     r"(?:\s*\?|\s*$|\.(?!\d)|,(?!\s*\d))",
     re.I,
 )
@@ -331,7 +331,7 @@ _RANGE_PATTERN = re.compile(
 _RANGE_PATTERN_BARE = re.compile(
     r"\b(\d{1,2}(?:st|nd|rd|th)?\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)\w*"
     r"(?:\s+\d{4})?)"
-    r"\s+(?:to|till|until)\s+"
+    r"\s+(?:to|t0|till|until)\s+"
     r"(\d{1,2}(?:st|nd|rd|th)?\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)\w*"
     r"(?:\s+\d{4})?)\b",
     re.I,
@@ -357,8 +357,10 @@ _WORD_TO_NUM = {
 }
 
 def _parse_number(text: str) -> Optional[int]:
-    """Parse a number from text — supports digits and word numbers."""
+    """Parse a number from text — supports digits, ordinals (1st/2nd/3rd), and word numbers."""
     text = text.strip().lower()
+    # Strip ordinal suffixes: 1st → 1, 2nd → 2, 3rd → 3, 4th → 4
+    text = re.sub(r'^(\d+)(?:st|nd|rd|th)$', r'\1', text)
     if text.isdigit():
         return int(text)
     return _WORD_TO_NUM.get(text)
@@ -368,7 +370,22 @@ _NUM_WORDS = "|".join(_WORD_TO_NUM.keys())
 _NUM_PATTERN = rf"(?:\d+|{_NUM_WORDS})"
 
 # Relative dates
+_MONTH_NAMES = (
+    r"(?:jan(?:uary)?|fab|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|"
+    r"aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)"
+)
+
 _RELATIVE_PATTERNS = {
+    # "nth week of <month>" MUST come BEFORE "last_week" so "last week of march"
+    # is matched as week-of-month, not as generic "last 7 days"
+    "nth_week_of_month": re.compile(
+        rf"\b(\d+(?:st|nd|rd|th)?|{_NUM_WORDS}|first|second|third|fourth|last)\s+(?:week|hafta)\s+(?:of\s+)?({_MONTH_NAMES})(?:\s+(\d{{4}}))?",
+        re.I,
+    ),
+    "month_nth_week": re.compile(
+        rf"\b({_MONTH_NAMES})\s+(?:ka\s+)?(\d+(?:st|nd|rd|th)?|{_NUM_WORDS}|first|second|third|fourth|last)\s+(?:week|hafta)(?:\s+(\d{{4}}))?",
+        re.I,
+    ),
     "last_week": re.compile(
         r"\b(?:last|previous|guzashta|pichle?|pichy|pichhle?)\s+(?:week|hafta|hafte)\b", re.I
     ),
@@ -541,6 +558,43 @@ def _extract_date_range(question: str) -> Optional[Tuple[date, date]]:
                 if n:
                     # Approximate: 30 days per month, including today
                     return (today - timedelta(days=n * 30 - 1), today)
+            elif key in ("nth_week_of_month", "month_nth_week"):
+                # Groups differ by pattern:
+                #  nth_week_of_month: group(1)=week_num, group(2)=month, group(3)=year?
+                #  month_nth_week:    group(1)=month, group(2)=week_num, group(3)=year?
+                if key == "nth_week_of_month":
+                    week_str, month_str = m.group(1), m.group(2)
+                    year_str = m.group(3) if m.lastindex >= 3 else None
+                else:
+                    month_str, week_str = m.group(1), m.group(2)
+                    year_str = m.group(3) if m.lastindex >= 3 else None
+
+                mo = _MONTH_MAP.get(month_str.lower()[:3]) or _MONTH_MAP.get(month_str.lower())
+                yr = int(year_str) if year_str else today.year
+
+                _WEEK_WORD = {
+                    "first": 1, "1st": 1, "one": 1,
+                    "second": 2, "2nd": 2, "two": 2,
+                    "third": 3, "3rd": 3, "three": 3,
+                    "fourth": 4, "4th": 4, "four": 4,
+                    "last": 4,
+                }
+                week_n = _parse_number(week_str) or _WEEK_WORD.get(week_str.lower())
+
+                if mo and week_n:
+                    import calendar as _cal
+                    # Week N = days (7*N-6) to (7*N) of the month, capped at month end
+                    last_day = _cal.monthrange(yr, mo)[1]
+                    day_start = min((week_n - 1) * 7 + 1, last_day)
+                    day_end   = min(week_n * 7, last_day)
+                    # "last week" = week containing the last day
+                    if week_str.lower() == "last":
+                        day_end   = last_day
+                        day_start = max(1, last_day - 6)
+                    try:
+                        return (date(yr, mo, day_start), date(yr, mo, day_end))
+                    except ValueError:
+                        pass
 
     # 2. Check for explicit range: "between X to Y", "from X to Y", "X se Y tak"
     #    Must be BEFORE standalone month check so "between 1 jan to 15 jan 2026"
@@ -854,6 +908,25 @@ def detect_challan_followup(question: str, prev_intent: str) -> Optional[str]:
     if not q:
         return None
 
+    # Guard: if the query is clearly about inspections (not challans),
+    # don't hijack it as a challan follow-up.
+    # e.g. "inspection summary of bahawalpur city" after a Multan challan query
+    _INSP_PRIMARY_GUARD = re.compile(
+        r"\b(inspect(?:ion)?s?|firs?|sealed|sealing|warnings?|no\s+offen[cs]e|"
+        r"muayina|mu[aā]yin[ae]|jaiz[ae]|checking)\b", re.I
+    )
+    if _INSP_PRIMARY_GUARD.search(q):
+        return None  # let inspection handler deal with it
+
+    # Guard: if the query mentions a DIFFERENT location from the previous
+    # challan context AND has its own clear intent, treat as fresh query
+    _HAS_OWN_LOCATION = re.compile(
+        r"\b(division|district|tehsil|station|city|sadar|cantt?)\b", re.I
+    )
+    if _HAS_OWN_LOCATION.search(q) and len(q.split()) > 8:
+        # Long query with its own location context — likely a fresh query
+        return None
+
     # Must contain a pronoun/reference to the previous answer
     has_ref = _CHALLAN_FOLLOWUP_RE.search(q)
     # Or just a very short follow-up with officer/location keyword
@@ -1139,6 +1212,16 @@ def execute_challan_lookup(source_id: str, question: str = "") -> Optional[Dict[
             parts = source_id.split(":", 2)
             if len(parts) == 3:
                 _, loc_type, loc_name = parts
+                # If the question contains date context, use date-filtered lookup
+                if question:
+                    dr = _extract_date_range(question)
+                    if dr:
+                        start_d, end_d = dr
+                        date_sub = f"challan_location:{loc_type}:{loc_name}"
+                        log.info("challan_location with date context: %s to %s", start_d, end_d)
+                        return _lookup_daterange(
+                            start_d.isoformat(), end_d.isoformat(), date_sub, question
+                        )
                 return _lookup_location(loc_type, loc_name)
 
         if source_id.startswith("challan_comparison:"):
@@ -2110,6 +2193,7 @@ def _lookup_officer_at_location(loc_type: str, loc_name: str,
         "       SUM(paid_amount) AS total_paid_amount "
         "FROM challan_data "
         f"WHERE officer_name IS NOT NULL AND officer_name != '' AND {where} "
+        "  AND snapshot_date = (SELECT MAX(snapshot_date) FROM challan_data) "
         "GROUP BY officer_name "
         "ORDER BY total_challans DESC",
         tuple(params),
@@ -2238,6 +2322,7 @@ def _lookup_officer_ranking(status: str = "paid", req_key: str = None) -> Option
         req_label = f" ({req_db_name})"
 
     # Get top officers with total challans, paid count, and primary location
+    # Use only the LATEST snapshot to avoid counting each challan multiple times
     rows = db.fetch_all(
         "SELECT officer_name, "
         "       COUNT(*) AS total_challans, "
@@ -2250,6 +2335,7 @@ def _lookup_officer_ranking(status: str = "paid", req_key: str = None) -> Option
         "       MODE() WITHIN GROUP (ORDER BY district_name) AS primary_district "
         "FROM challan_data "
         "WHERE officer_name IS NOT NULL AND officer_name != '' "
+        "  AND snapshot_date = (SELECT MAX(snapshot_date) FROM challan_data) "
         f"{req_filter}"
         "GROUP BY officer_name "
         "ORDER BY total_challans DESC",
@@ -2371,6 +2457,7 @@ def _lookup_comparison(status: str = "paid", level: str = "tehsil",
             "FROM challan_data "
             f"WHERE {name_col} IS NOT NULL AND {name_col} != '' "
             "AND requisition_type_name = %s "
+            "AND snapshot_date = (SELECT MAX(snapshot_date) FROM challan_data) "
             f"GROUP BY {name_col} "
             "ORDER BY total_challans DESC",
             (req_db_name,),
@@ -2409,18 +2496,20 @@ def _lookup_comparison(status: str = "paid", level: str = "tehsil",
     if not rows:
         return None
 
-    records = rows
+    # Sort by paid amount (total_amount) descending — users typically
+    # want to see which stations collected the most fine money
+    records = sorted(rows, key=lambda r: float(r.get("total_amount", 0) or 0), reverse=True)
 
-    lines = [f"**PERA {level_label}s Ranked by {status_title} Challans{req_label}**\n"]
+    lines = [f"**PERA Top {level_label}s Ranked by {status_title} Challan Amount{req_label}**\n"]
     ctx_lines = [
         "[Source Type: API]",
-        f"[API Name: PERA Challan {level_label} Comparison by {status_title}{req_label}]",
+        f"[API Name: PERA Challan {level_label} Comparison by {status_title} Amount{req_label}]",
         f"[Comparison Level: {level_label}]",
         f"[Status Filter: {status_title}]",
         f"[Requisition Type: {req_label.strip(' —') or 'All'}]",
         f"[Total {level_label}s: {len(records)}]",
         "",
-        f"All {level_label}s ranked by {status_title} challans{req_label} (highest to lowest):",
+        f"Top {level_label}s ranked by {status_title} challan amount{req_label} (highest to lowest):",
         "",
     ]
 
@@ -2439,9 +2528,9 @@ def _lookup_comparison(status: str = "paid", level: str = "tehsil",
             ratio = (paid / challans * 100) if challans > 0 else 0
             extra = f" (Paid: {_fnum(paid)} | Unpaid: {_fnum(unpaid)} | Overdue: {_fnum(overdue)} | Paid Ratio: {ratio:.1f}%)"
 
-        line = f"{i}. **{name}**: {_fnum(challans)} challans{extra} (Rs. {_fnum(amount)})"
+        line = f"{i}. **{name}**: Rs. {_fnum(amount)} — {_fnum(challans)} challans{extra}"
         lines.append(line)
-        ctx_lines.append(f"{i}. {name}: {_fnum(challans)} challans{extra} (Rs. {_fnum(amount)})")
+        ctx_lines.append(f"{i}. {name}: Rs. {_fnum(amount)} — {_fnum(challans)} challans{extra}")
 
     if len(records) > 20:
         lines.append(f"\n_...and {len(records) - 20} more {level_label.lower()}s_")
@@ -2497,10 +2586,12 @@ def _lookup_officer(officer_name: str, question: str = "") -> Optional[Dict]:
     # Use ILIKE for partial matching — DB stores names with code suffixes
     # (e.g. "Muhammad Azhar Saeed EO-091") but users ask without the code.
     # First try exact match, then fall back to ILIKE contains.
+    # IMPORTANT: Always filter to latest snapshot to avoid counting duplicates
+    _SNAP_FILTER = " AND snapshot_date = (SELECT MAX(snapshot_date) FROM challan_data)"
     name_param = officer_name
     where_clause = "officer_name = %s"
     test_row = db.fetch_one(
-        "SELECT COUNT(*) as cnt FROM challan_data WHERE officer_name = %s",
+        "SELECT COUNT(*) as cnt FROM challan_data WHERE officer_name = %s" + _SNAP_FILTER,
         (officer_name,),
     )
     if not test_row or (test_row.get("cnt") or 0) == 0:
@@ -2514,7 +2605,7 @@ def _lookup_officer(officer_name: str, question: str = "") -> Optional[Dict]:
         "       SUM(fine_amount) as total_fine, "
         "       SUM(paid_amount) as total_paid, "
         "       SUM(outstanding_amount) as total_outstanding "
-        f"FROM challan_data WHERE {where_clause} "
+        f"FROM challan_data WHERE {where_clause}" + _SNAP_FILTER + " "
         "GROUP BY status ORDER BY status",
         (name_param,),
     )
@@ -2523,7 +2614,7 @@ def _lookup_officer(officer_name: str, question: str = "") -> Optional[Dict]:
 
     # Resolve actual officer name from DB for display
     actual_name_row = db.fetch_one(
-        f"SELECT DISTINCT officer_name FROM challan_data WHERE {where_clause} LIMIT 1",
+        f"SELECT DISTINCT officer_name FROM challan_data WHERE {where_clause}" + _SNAP_FILTER + " LIMIT 1",
         (name_param,),
     )
     display_name = (actual_name_row or {}).get("officer_name", officer_name)
@@ -2532,7 +2623,7 @@ def _lookup_officer(officer_name: str, question: str = "") -> Optional[Dict]:
     type_rows = db.fetch_all(
         "SELECT requisition_type_name, status, COUNT(*) as cnt, "
         "       SUM(fine_amount) as total_fine "
-        f"FROM challan_data WHERE {where_clause} "
+        f"FROM challan_data WHERE {where_clause}" + _SNAP_FILTER + " "
         "GROUP BY requisition_type_name, status "
         "ORDER BY requisition_type_name, status",
         (name_param,),
@@ -2542,7 +2633,7 @@ def _lookup_officer(officer_name: str, question: str = "") -> Optional[Dict]:
     location_rows = db.fetch_all(
         "SELECT tehsil_name, district_name, division_name, "
         "       COUNT(*) as cnt, SUM(fine_amount) as total_fine "
-        f"FROM challan_data WHERE {where_clause} "
+        f"FROM challan_data WHERE {where_clause}" + _SNAP_FILTER + " "
         "GROUP BY tehsil_name, district_name, division_name "
         "ORDER BY cnt DESC",
         (name_param,),

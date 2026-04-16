@@ -321,6 +321,20 @@ def detect_operational_activity_intent(question: str) -> Optional[str]:
     if not has_oa_kw and not officer_name:
         return None
 
+    # Guard: if query is primarily about INSPECTIONS, defer to inspection handler.
+    # e.g. "shalimar station how many inspections ... actions taken" — the "actions taken"
+    # matches OA keywords, but the query is about inspections not operational activities.
+    _INSP_PRIMARY_RE = re.compile(
+        r"\b(inspect(?:ion)?s?|muayina|mu[aā]yin[ae]|firs?\b|sealed|sealing|"
+        r"warnings?\b|no\s+offen[cs]e|jaiz[ae]|checking)\b", re.I)
+    _OA_SPECIFIC_RE = re.compile(
+        r"\b(req(?:u[ie]?)?sitions?|requsitions?|operational\s+activit|"
+        r"anti[\s-]?encroachment|price[\s-]?control|eviction|"
+        r"anti[\s-]?hoarding|public[\s-]?nuisance|tajawuz|"
+        r"qeemat\s+control|beydakhal|ihtikaar)\b", re.I)
+    if _INSP_PRIMARY_RE.search(q) and not _OA_SPECIFIC_RE.search(q):
+        return None  # defer to inspection handler
+
     # If officer mentioned + OA keyword (requisition/assign etc), route to officer lookup
     # This check must be BEFORE location detection since officer name shouldn't
     # be confused with a location
@@ -1045,6 +1059,18 @@ def detect_oa_followup(question: str, prev_intent: str) -> Optional[str]:
 
     if not has_ref and not is_short:
         return None
+
+    # Guard: if user specifies a NEW location that differs from the previous
+    # context, this is a fresh query — NOT a follow-up.
+    # e.g. prev=oa_tehsil:Shalimar, current="challans in Lahore" → fresh query
+    cur_loc = _detect_location(q)
+    if cur_loc:
+        cur_name = cur_loc.get(f"{cur_loc['level']}_name", "").lower()
+        # Extract location name from prev_intent (format: oa_level:Name)
+        prev_parts = prev_intent.split(":")
+        prev_name = prev_parts[-1].lower() if len(prev_parts) > 1 else ""
+        if cur_name and prev_name and cur_name != prev_name:
+            return None  # different location → fresh query
 
     wants_challan = _CHALLAN_CROSS_RE.search(q)
     wants_dept = _DEPT_FOLLOWUP_RE.search(q)
