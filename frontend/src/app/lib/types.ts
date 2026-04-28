@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════
-   PERA AI — Domain & API Types
+   PERA AUTHORITY CHATBOT — Domain & API Types
    ═══════════════════════════════════════════════════════════ */
 
 // ─── Answer Source Mode ───
@@ -78,7 +78,7 @@ export interface TranscribeResponse {
 // ─── API Error ───
 
 export interface ApiError {
-  type: "network" | "http" | "parse" | "unknown";
+  type: "network" | "http" | "parse" | "unknown" | "abort";
   status?: number;
   message: string;
 }

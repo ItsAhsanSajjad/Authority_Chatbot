@@ -518,18 +518,29 @@ def _query_insp_location(
             (child_level, name, child_level, name),
         )
 
-    # Also get officer-level data for this location
+    # Also get officer-level data for this location.
+    # IMPORTANT: officer_inspection_detail and inspection_performance are
+    # populated by DIFFERENT upstream endpoints with different refresh
+    # cadences. The PCM officer-detail endpoint frequently returns 404 for
+    # specific tehsils, leaving the per-officer table older than the
+    # summary table. We capture both snapshot dates so the answer layer
+    # can warn the user when they don't match (otherwise sum-of-officers
+    # won't equal Total Inspections and looks like a math error).
     officer_rows = []
+    officer_snapshot = None
+    parent_snapshot = parent_rows[0].get("snapshot_date") if parent_rows else None
     if level == "tehsil":
         officer_rows = db.fetch_all(
             "SELECT officer_name, total_inspections, total_challans, "
-            "       fine_amount, sealed, arrest_case "
+            "       fine_amount, sealed, arrest_case, snapshot_date "
             "FROM officer_inspection_detail "
             f"WHERE tehsil_name = %s AND snapshot_date = ("
             f"  SELECT MAX(snapshot_date) FROM officer_inspection_detail WHERE tehsil_name = %s"
             f") ORDER BY total_inspections DESC",
             (name, name),
         )
+        if officer_rows:
+            officer_snapshot = officer_rows[0].get("snapshot_date")
 
     if not parent_rows and not child_rows:
         return {
@@ -563,13 +574,52 @@ def _query_insp_location(
             )
 
     if officer_rows:
-        context += f"\nOfficer Breakdown ({len(officer_rows)} officers):\n"
+        # Detect snapshot-date mismatch between the summary table and the
+        # per-officer table. When they differ, the sum of per-officer
+        # inspections will NOT equal Total Inspections — explain why up
+        # front so the LLM tells the user instead of looking inconsistent.
+        officer_inspect_sum = sum(int(r.get("total_inspections", 0) or 0) for r in officer_rows)
+        snapshot_mismatch = (
+            parent_snapshot
+            and officer_snapshot
+            and parent_snapshot != officer_snapshot
+        )
+
+        context += f"\nOfficer Breakdown ({len(officer_rows)} officers"
+        if officer_snapshot:
+            context += f", as of snapshot {officer_snapshot}"
+        context += "):\n"
+
+        if snapshot_mismatch:
+            # This block is read by the LLM and surfaced to the user. It
+            # MUST be in the formatted context so the answerer doesn't
+            # silently compose contradictory totals.
+            context += (
+                f"  [DATA NOTE — SNAPSHOT MISMATCH]\n"
+                f"  Summary totals above are from snapshot {parent_snapshot}.\n"
+                f"  Per-officer breakdown below is from an older snapshot ({officer_snapshot}) "
+                f"because the upstream PCM officer-detail endpoint did not return fresh data "
+                f"for this tehsil on {parent_snapshot}.\n"
+                f"  Sum of per-officer inspections = {officer_inspect_sum:,} "
+                f"(differs from Total Inspections {parent_rows[0].get('total_actions', 0):,} "
+                f"by the activity recorded between {officer_snapshot} and {parent_snapshot} "
+                f"that has not yet been broken down per officer).\n"
+                f"  When listing officers, state this snapshot date and explain the "
+                f"discrepancy so the user does not read it as a math error.\n"
+            )
+
         for r in officer_rows:
             context += (
                 f"  {r['officer_name']}: "
                 f"{r.get('total_inspections', 0):,} inspections, "
                 f"{r.get('total_challans', 0):,} challans, "
                 f"Rs. {r.get('fine_amount', 0):,} fine\n"
+            )
+
+        if snapshot_mismatch:
+            context += (
+                f"  [End of officer breakdown — sum {officer_inspect_sum:,} "
+                f"reflects {officer_snapshot}, not {parent_snapshot}.]\n"
             )
 
     return {

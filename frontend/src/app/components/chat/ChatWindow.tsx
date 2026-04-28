@@ -15,6 +15,8 @@ interface Props {
   onSendSuggestion: (text: string) => void;
   onOpenPdf: (ref: Reference) => void;
   onRetry: () => void;
+  /** Edit a previously-sent user message at the given index. */
+  onEditMessage?: (index: number) => void;
 }
 
 /**
@@ -30,6 +32,7 @@ export const ChatWindow = memo(function ChatWindow({
   onSendSuggestion,
   onOpenPdf,
   onRetry,
+  onEditMessage,
 }: Props) {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -135,6 +138,11 @@ export const ChatWindow = memo(function ChatWindow({
               onOpenPdf={onOpenPdf}
               onRetry={msg.failed ? onRetry : undefined}
               onSendQuery={onSendSuggestion}
+              onEditOwn={
+                msg.role === "user" && onEditMessage
+                  ? () => onEditMessage(i)
+                  : undefined
+              }
             />
           );
         })}

@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════
-   PERA AI — Safe Markdown Renderer
+   PERA AUTHORITY CHATBOT — Safe Markdown Renderer
    Converts a minimal markdown subset to React elements.
    NO dangerouslySetInnerHTML — fully structured rendering.
    ═══════════════════════════════════════════════════════════ */

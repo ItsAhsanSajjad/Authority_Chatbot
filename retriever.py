@@ -36,19 +36,44 @@ _URDU_PARTICLES_RETRIEVER = _re.compile(
     _re.IGNORECASE
 )
 
-# Abbreviation -> full expansion (from unified pera_vocab)
-from pera_vocab import (
-    get_full_abbreviation_map as _get_full_abbrev_map,
-    get_normalized_abbreviation_map as _get_norm_abbrev_map,
-    EXPANSION_KEYWORDS as _EXPANSION_KW_SET,
-)
+# Abbreviation -> full expansion (for embedding search quality)
+_ABBREV_MAP_RAW = {
+    "cto": "Chief Technology Officer",
+    "dg": "Director General",
+    "adg": "Additional Director General",
+    "ddg": "Deputy Director General",
+    "dd": "Deputy Director",
+    "mgr": "Manager",
+    "hr": "Human Resources",
+    "it": "Information Technology",
+    "eo": "Enforcement Officer",
+    "io": "Investigation Officer",
+    "sso": "System Support Officer",
+    "sdeo": "Sub-Divisional Enforcement Officer",
+    "deo": "Data Entry Operator",
+    "dba": "Database Administrator",
+    "se": "Software Engineer",
+    "admin": "Administration",
+    "tor": "Terms of Reference",
+    "jd": "Job Description",
+    "sr": "Service Rules",
+    "Schedule-I": "Organizational Structure",
+    "Schedule-II": "Appointment & Conditions of Service",
+    "Schedule-III": "Special Pay Package PERA (SPPP)",
+    "Schedule-IV": "Rules / Regulations Adopted by the Authority",
+    "Schedule-V": "Transfer and Posting",
+    "Schedule-VI": "Special Allowance and Benefits",
+    "sppp": "Special Pay Package PERA",
+    "faqs": "Frequently Asked Questions",
+    "gli": "Group Life Insurance",
+}
 
 def _norm_key(s: str) -> str:
     # Keep alphanumerics; makes "Schedule-I" -> "schedulei"
     return _re.sub(r"[^a-z0-9]+", "", (s or "").lower())
 
-# Normalized abbrev map for embedding search quality
-_ABBREV_MAP = _get_norm_abbrev_map()
+# Normalize abbrev keys once so Schedule-I etc. work
+_ABBREV_MAP = {_norm_key(k): v for k, v in _ABBREV_MAP_RAW.items()}
 
 # Smart Context Expansion Keywords
 # If query contains these, we fetch adjacent pages (±RADIUS) to capture tables/schedules
@@ -128,10 +153,71 @@ def _normalize_numbered_references(query: str) -> str:
 _normalize_schedule_references = _normalize_numbered_references
 
 
+# PERA-domain vocabulary used for lightweight typo correction. Any query
+# word that is a near-miss (Levenshtein ratio >= 0.85) of one of these
+# terms gets auto-corrected before abbreviation expansion and role
+# detection run. This saves users from losing retrieval quality because
+# they typed "develppment" instead of "development".
+_PERA_VOCAB = frozenset([
+    # Role prefixes
+    "manager", "officer", "director", "assistant", "deputy", "chief",
+    "head", "coordinator", "superintendent", "inspector", "registrar",
+    "analyst", "hearing", "enforcement",
+    # Specializations / departments
+    "development", "operations", "enforcement", "investigation",
+    "planning", "finance", "admin", "administration", "compliance",
+    "communication", "legal", "audit", "procurement", "training",
+    "monitoring", "evaluation", "research", "coordination", "security",
+    "transport", "estate", "quality", "technology", "infrastructure",
+    "data", "systems", "support", "services",
+    # Common PERA nouns
+    "authority", "regulation", "regulations", "regulatory", "punjab",
+    "notification", "schedule", "salary", "responsibilities", "powers",
+    "reporting", "committee", "chairperson", "chairman", "appointment",
+    "hierarchy",
+])
+_TYPO_MIN_LEN = 5  # don't correct short tokens (too many false positives)
+_TYPO_RATIO_MIN = 0.85
+
+
+def _fix_query_typos(query: str) -> str:
+    """Cheap per-word typo correction against PERA vocabulary.
+
+    Users regularly mistype domain terms (e.g. 'develppment'). Without
+    correction, the explicit-role guard in the LLM rewriter skips
+    rewrite, the embedding search degrades, and `_detect_target_role`
+    in answerer.py fails its substring match. difflib is stdlib-only
+    and fast for short tokens.
+    """
+    import difflib as _dl
+    out: list[str] = []
+    for tok in (query or "").split():
+        # Preserve trailing punctuation like ? , .
+        m = _re.match(r"^(\w+)(\W*)$", tok, _re.UNICODE)
+        if not m:
+            out.append(tok)
+            continue
+        word, tail = m.group(1), m.group(2)
+        low = word.lower()
+        if len(low) < _TYPO_MIN_LEN or low in _PERA_VOCAB or not low.isalpha():
+            out.append(tok)
+            continue
+        match = _dl.get_close_matches(low, _PERA_VOCAB, n=1, cutoff=_TYPO_RATIO_MIN)
+        if match and match[0] != low:
+            out.append(match[0] + tail)
+        else:
+            out.append(tok)
+    return " ".join(out)
+
+
 def _expand_abbreviations(query: str) -> str:
     """Expand known abbreviations in-place for better embedding matches."""
     # First normalize schedule references
     query = _normalize_schedule_references(query)
+
+    # Correct common PERA-domain typos before role detection and
+    # abbreviation expansion downstream stages rely on clean spelling.
+    query = _fix_query_typos(query)
 
     # Normalize possessive forms: "manager's development" → "manager development"
     query = _re.sub(r"[''\u2019]s\b", "", query)
@@ -177,6 +263,29 @@ def _get_page_map_by_id(id_map: Dict[int, Dict[str, Any]]) -> Dict[Tuple[str, in
     return m
 
 
+def _get_section_map_by_id(
+    id_map: Dict[int, Dict[str, Any]]
+) -> Dict[Tuple[str, str], List[int]]:
+    """
+    Phase 3: build map of (doc_name, section_id) -> list of chunk IDs.
+    Used for parent-section companion fetching.
+
+    Backward compatibility: chunks indexed before Phase 3 will have no
+    `section_id` field. Those chunks are intentionally EXCLUDED from this
+    map, so older indexes simply don't benefit from section-level fetch —
+    they keep working via page-adjacency expansion. No migration is
+    required to load; a rebuild populates the map.
+    """
+    m: Dict[Tuple[str, str], List[int]] = defaultdict(list)
+    for cid, r in id_map.items():
+        sid = r.get("section_id")
+        if not sid:
+            continue
+        doc = r.get("doc_name", "Unknown")
+        m[(doc, sid)].append(cid)
+    return m
+
+
 
 # =============================================================================
 # Main Retrieval Logic
@@ -186,17 +295,111 @@ def _evidence_id(text: str) -> str:
     return hashlib.sha256((text or "")[:500].encode()).hexdigest()[:10]
 
 
-def retrieve(question: str, index_dir: Optional[str] = None, source_type_filter: Optional[str] = None) -> Dict[str, Any]:
+# Patterns for the lexical role-anchor in retrieve(): capture phrases
+# like "manager (development)", "manager development", "chief technology
+# officer", "assistant manager monitoring", "senior manager academics".
+# The anchor injects chunks that literally start with "Position Title: -
+# <role>" so role-subject chunks can't lose to role-mentioning chunks
+# on embeddings alone.
+_ROLE_PHRASE_RES = [
+    # parenthesised: "Manager (Development)"
+    _re.compile(
+        r"\b((?:senior|assistant|deputy|additional|joint|regional)\s+)?"
+        r"(manager|director|officer|coordinator|superintendent|head|chief)"
+        r"\s*\(\s*([A-Za-z][A-Za-z\s&/]{1,40}?)\s*\)",
+        _re.IGNORECASE,
+    ),
+    # "<prefix> <spec>" where spec is a single noun
+    _re.compile(
+        r"\b((?:senior|assistant|deputy|additional|joint|regional)\s+)?"
+        r"(manager|director|officer|coordinator|superintendent|head|chief)"
+        r"\s+([A-Za-z][A-Za-z&]{2,30})\b",
+        _re.IGNORECASE,
+    ),
+]
+
+
+def _extract_role_phrase_from_query(question: str) -> str:
+    """Pull a normalised role-phrase from the user's question.
+
+    Returns phrasing suitable for substring matching against chunk
+    text, e.g. 'manager (development)'. If nothing matches, returns ''.
+    """
+    q = (question or "").strip()
+    if not q:
+        return ""
+    for pat in _ROLE_PHRASE_RES:
+        m = pat.search(q)
+        if not m:
+            continue
+        prefix = (m.group(1) or "").strip()
+        prefix_full = (m.group(2) or "").strip()
+        spec = (m.group(3) or "").strip()
+        if not prefix_full or not spec:
+            continue
+        # Avoid tokens the answerer treats as non-specific.
+        if spec.lower() in {
+            "the", "and", "for", "has", "who", "what", "why", "where",
+            "when", "does", "shall", "will", "may", "can",
+            "salary", "role", "duties",
+        }:
+            continue
+        if prefix:
+            core = f"{prefix} {prefix_full}".lower()
+        else:
+            core = prefix_full.lower()
+        # Prefer parenthesised form since it matches PERA's JD layout.
+        if "(" in q and ")" in q:
+            return f"{core} ({spec.lower()})"
+        return f"{core} {spec.lower()}"
+    return ""
+
+
+# Normalization for cross-doc content fingerprinting.
+# Strips role-context prefix ([Role: …]\n) and whitespace so two chunks
+# with the same regulatory text but different surrounding formatting
+# still collide and get deduplicated.
+_ROLE_PREFIX_STRIP_RE = _re.compile(r"^\s*\[Role:[^\]]+\]\s*\n", _re.IGNORECASE)
+_NON_ALNUM_RE = _re.compile(r"[^a-z0-9]+")
+
+
+def _content_fingerprint(text: str, prefix_chars: int = 500) -> str:
+    """Produce a stable fingerprint for cross-document dedup.
+
+    Normalizes by:
+      • removing the "[Role: …]" prefix the chunker injects,
+      • lower-casing,
+      • collapsing all non-alphanumerics to single spaces,
+      • taking the first `prefix_chars` characters.
+
+    Empty string return means "do not dedup this" (fallback for empty text).
+    """
+    if not text:
+        return ""
+    s = _ROLE_PREFIX_STRIP_RE.sub("", text)
+    s = s.lower()
+    s = _NON_ALNUM_RE.sub(" ", s).strip()
+    if not s:
+        return ""
+    s = s[:prefix_chars]
+    return hashlib.sha256(s.encode("utf-8")).hexdigest()[:16]
+
+
+def retrieve(
+    question: str,
+    index_dir: Optional[str] = None,
+    source_type_filter: Optional[str] = None,
+) -> Dict[str, Any]:
     """
     Semantic search + reranking + smart expansion + keyword fallback.
     Uses in-memory cached index (automatic blue/green invalidation).
 
-    Args:
-        question: User query.
-        index_dir: Override index directory (optional).
-        source_type_filter: Optional filter — "api" or "document"/"pdf"/"docx".
-            When set, only hits with matching source_type are returned.
-            Default None returns all hits (mixed).
+    Parameters
+    ----------
+    source_type_filter
+        When set to ``"document"`` or ``"api"``, restricts results to rows
+        whose ``source_type`` matches. ``None`` means no filter (default).
+        Used by the source-mode toggle (documents / stored_api / both).
     """
     idx, rows, id_map, token_index, resolved_dir = get_cached_index()
 
@@ -288,55 +491,121 @@ def retrieve(question: str, index_dir: Optional[str] = None, source_type_filter:
         log.error("Embedding failed: %s", e, exc_info=True)
         return empty_result
 
-    # 2) Search FAISS with ALL queries, merge results (keep highest score per chunk)
+    # 2) Search FAISS with ALL queries, fuse with Reciprocal Rank Fusion (RRF).
+    #
+    # Phase 3 change: the prior implementation merged variants by taking the
+    # MAX cosine per chunk, which under-weighted chunks that ranked
+    # consistently well across every variant (mid-rank everywhere) compared
+    # to chunks that happened to spike high on a single variant. For
+    # multi-page / continued-topic queries, the "consistent mid-rank" chunks
+    # are exactly the ones we want to surface.
+    #
+    # RRF assigns each chunk a score of sum(1 / (RRF_K + rank_i)) across
+    # variants. It is the standard fusion method in production RAG.
+    #
+    # We still keep the max cosine similarity seen as the chunk's "score"
+    # for downstream compatibility (SIM_THRESHOLD filtering, logging, and
+    # the reranker's semantic term all expect a cosine value).
+    RRF_K = int(os.getenv("RETRIEVER_RRF_K", "60"))
     try:
-        log.debug("FAISS search with TOP_K=%d each", TOP_K)
+        log.debug("FAISS search with TOP_K=%d per query", TOP_K)
         D1, I1 = idx.search(qv_primary.reshape(1, -1), TOP_K)
         D2, I2 = idx.search(qv_core.reshape(1, -1), TOP_K)
+        search_results = [(D1, I1, "primary"), (D2, I2, "core")]
 
-        # Merge: keep highest similarity score per chunk ID
-        merged_scores: Dict[int, float] = {}
-        for score, cid in zip(D1[0], I1[0]):
-            try:
-                ci = int(cid)
-            except Exception:
-                continue
-            if ci >= 0 and ci in id_map:
-                merged_scores[ci] = max(merged_scores.get(ci, 0.0), float(score))
-
-        for score, cid in zip(D2[0], I2[0]):
-            try:
-                ci = int(cid)
-            except Exception:
-                continue
-            if ci >= 0 and ci in id_map:
-                merged_scores[ci] = max(merged_scores.get(ci, 0.0), float(score))
-
-        # Third search: parenthesized variant (if exists)
         if qv_variant is not None:
             D3, I3 = idx.search(qv_variant.reshape(1, -1), TOP_K)
-            for score, cid in zip(D3[0], I3[0]):
+            search_results.append((D3, I3, "variant"))
+
+        rrf_scores: Dict[int, float] = {}
+        best_sim: Dict[int, float] = {}
+        per_variant_counts: Dict[str, int] = {}
+
+        for D_v, I_v, variant_name in search_results:
+            n_valid = 0
+            for rank, (score, cid) in enumerate(zip(D_v[0], I_v[0])):
                 try:
                     ci = int(cid)
                 except Exception:
                     continue
-                if ci >= 0 and ci in id_map:
-                    merged_scores[ci] = max(merged_scores.get(ci, 0.0), float(score))
+                if ci < 0 or ci not in id_map:
+                    continue
+                rrf_scores[ci] = rrf_scores.get(ci, 0.0) + 1.0 / (RRF_K + rank + 1)
+                s = float(score)
+                if s > best_sim.get(ci, -1.0):
+                    best_sim[ci] = s
+                n_valid += 1
+            per_variant_counts[variant_name] = n_valid
 
-        # Sort by score descending, take top TOP_K
-        sorted_merged = sorted(merged_scores.items(), key=lambda x: x[1], reverse=True)[:TOP_K]
+        # Order chunks by RRF score descending, cap at TOP_K for downstream.
+        sorted_rrf = sorted(rrf_scores.items(), key=lambda x: x[1], reverse=True)[:TOP_K]
 
-        # Reconstruct D and I arrays for compatibility with downstream code
-        D_merged = np.array([[s for _, s in sorted_merged]], dtype=np.float32)
-        I_merged = np.array([[cid for cid, _ in sorted_merged]])
+        # ───── Lexical role-anchor injection ─────
+        # Embedding retrieval is surprisingly weak at distinguishing
+        # chunks where a role NAME is the subject (Position Title: X)
+        # from chunks where the same role is merely referenced in a
+        # Report-To field. For questions like "Manager (Development)
+        # reporting to?" the subject chunk usually loses to a handful
+        # of subordinate-role chunks that semantically cluster around
+        # the same wording.
+        #
+        # Fix: whenever we can extract a role-shaped phrase from the
+        # question (e.g. "manager (development)" or "manager
+        # development"), force-inject ANY chunk whose text starts with
+        # "Position Title: - <role>" into the top of the fused list.
+        # Keep existing chunks after it; trim to TOP_K to preserve the
+        # downstream contract.
+        try:
+            role_phrase = _extract_role_phrase_from_query(question or "")
+            if role_phrase:
+                anchor_cids: List[int] = []
+                anchor_seen = set()
+                _pat_pt = _re.compile(
+                    r"position\s*title\s*:?\s*-?\s*"
+                    + _re.escape(role_phrase.lower()),
+                    _re.IGNORECASE,
+                )
+                _pat_role = _re.compile(
+                    r"\[\s*role\s*:?\s*" + _re.escape(role_phrase.lower()),
+                    _re.IGNORECASE,
+                )
+                existing = {ci for ci, _ in sorted_rrf}
+                for ci, row in id_map.items():
+                    if ci in anchor_seen:
+                        continue
+                    txt = (row.get("text") or "").lower()
+                    if _pat_pt.search(txt) or _pat_role.search(txt):
+                        anchor_cids.append(ci)
+                        anchor_seen.add(ci)
+                if anchor_cids:
+                    # Give anchors a synthetic top RRF score so they sort first.
+                    top_rrf = sorted_rrf[0][1] if sorted_rrf else 1.0
+                    anchor_entries = [(ci, top_rrf + 1.0 - i * 0.01)
+                                       for i, ci in enumerate(anchor_cids)]
+                    # Prepend anchors, drop them from the tail if already present.
+                    rest = [(ci, s) for ci, s in sorted_rrf if ci not in anchor_seen]
+                    sorted_rrf = (anchor_entries + rest)[:TOP_K]
+                    # Seed best_sim for anchors that FAISS never surfaced.
+                    for ci in anchor_cids:
+                        best_sim.setdefault(ci, 0.5)
+                    log.info(
+                        "Role anchor injected %d chunk(s) for role=%r",
+                        len(anchor_cids), role_phrase,
+                    )
+        except Exception as _anchor_err:
+            log.debug("Role anchor skipped: %s", _anchor_err)
 
-        # Replace originals
-        D = D_merged
-        I = I_merged
+        # Reconstruct D and I. D carries the max cosine seen (downstream
+        # thresholds stay valid); I carries the RRF-ordered IDs.
+        D = np.array([[best_sim[cid] for cid, _ in sorted_rrf]], dtype=np.float32)
+        I = np.array([[cid for cid, _ in sorted_rrf]])
 
-        log.info("Dual-query merged: %d unique chunks (primary=%d, core=%d)",
-                 len(sorted_merged), len([x for x in I1[0] if int(x) >= 0]),
-                 len([x for x in I2[0] if int(x) >= 0]))
+        log.info(
+            "RRF fusion: %d unique chunks across variants (%s) — top RRF score=%.4f",
+            len(sorted_rrf),
+            ", ".join(f"{k}={v}" for k, v in per_variant_counts.items()),
+            sorted_rrf[0][1] if sorted_rrf else 0.0,
+        )
     except Exception as e:
         log.error("FAISS search failed: %s", e, exc_info=True)
         return empty_result
@@ -354,32 +623,70 @@ def retrieve(question: str, index_dir: Optional[str] = None, source_type_filter:
             base_ids.append(xi)
             base_id_set.add(xi)
 
-    # --- Smart Page Expansion Logic (ID-based) ---
-    should_expand = any(k in (question or "").lower() for k in _EXPANSION_KEYWORDS)
-    expanded_ids = set()
+    # --- Multi-Page Expansion (Phase 3: broadened) ---
+    #
+    # Previously: expansion only fired for queries containing specific
+    # keywords (salary, detail, schedule, ...). A topic that spans
+    # pages 1-5 for a general query (e.g. "procurement", "leave policy")
+    # would NEVER trigger expansion — mid-topic pages were lost.
+    #
+    # New behavior:
+    #   A) ALWAYS expand ±1 page for the top 5 RRF hits (cheap, universal).
+    #   B) ±EXPANSION_RADIUS (default 2) for the top 10 hits when EITHER:
+    #        • the query contains an expansion keyword, OR
+    #        • the hit's text contains a forward reference
+    #          ("see Schedule-III", "continued on", "as detailed below",
+    #          "following page/section", "next clause", ...).
+    #
+    # Budget is bounded — radius-2 still applies only to top-10 and
+    # dedup via `expanded_ids` set prevents repeats.
+    expanded_ids: set = set()
 
-    if should_expand and base_ids:
-        log.debug("Smart Expansion Triggered (Salary/Detail context)")
+    _FORWARD_REF_RE = _re.compile(
+        r"\b(?:see|refer(?:red)?\s+to|as\s+(?:detailed|explained|mentioned|specified|set\s+out))"
+        r"\s+(?:also\s+)?(?:below|in|on|hereafter|"
+        r"schedule|section|rule|annex(?:ure)?|chapter|part|article|clause|appendix)"
+        r"|continued\s+(?:on|from)\s+(?:next|previous|page)"
+        r"|(?:on|in)\s+the\s+(?:following|next|subsequent)\s+(?:page|section|clause|sub-?section)"
+        r"|(?:please\s+)?(?:see|refer)\s+(?:to\s+)?(?:page|para)\s*\d+"
+        r"|\(continued\)"
+        r"|\.\.\.\s*$",
+        _re.IGNORECASE | _re.MULTILINE
+    )
+
+    if base_ids:
         page_map = _get_page_map_by_id(id_map)
+        section_map = _get_section_map_by_id(id_map)
+        section_cap_per_hit = int(os.getenv("RETRIEVER_SECTION_COMPANIONS_CAP", "4"))
 
-        # For top 10 FAISS hits, fetch neighbor pages ±RADIUS
+        keyword_expand = any(k in (question or "").lower() for k in _EXPANSION_KEYWORDS)
+
         for rank, (score, cid) in enumerate(zip(D[0], base_ids)):
             if rank >= 10:
                 break
-
             r = id_map.get(cid)
             if not r:
                 continue
-
             doc = r.get("doc_name")
             page = r.get("loc_start")
-
-            # Skip page expansion for API chunks (no page concept)
-            if r.get("source_type") == "api":
+            if not (isinstance(page, int) and doc):
                 continue
 
-            if isinstance(page, int) and doc:
-                for offset in range(-_EXPANSION_RADIUS, _EXPANSION_RADIUS + 1):
+            # Radius-1 for ALL top-5 hits (narrative continuity guarantee).
+            # Radius-RADIUS for top-10 when keyword OR forward-ref present.
+            if rank < 5:
+                radius = 1
+            else:
+                radius = 0
+
+            hit_text = r.get("text", "") or ""
+            has_forward_ref = bool(_FORWARD_REF_RE.search(hit_text))
+
+            if keyword_expand or has_forward_ref:
+                radius = max(radius, _EXPANSION_RADIUS)
+
+            if radius > 0:
+                for offset in range(-radius, radius + 1):
                     if offset == 0:
                         continue
                     p = page + offset
@@ -387,7 +694,39 @@ def retrieve(question: str, index_dir: Optional[str] = None, source_type_filter:
                         if neighbor_id not in base_id_set:
                             expanded_ids.add(neighbor_id)
 
-    log.debug("Added %d context chunks.", len(expanded_ids))
+            if has_forward_ref:
+                log.debug(
+                    "Forward-ref expansion on rank=%d doc=%s p=%s (radius=%d)",
+                    rank, (doc or "?")[:30], page, radius
+                )
+
+            # --- Section companion fetch (Phase 3) ---
+            # If this chunk carries a section_id (i.e. was indexed under
+            # Phase 3 chunker), pull a bounded set of sibling chunks in
+            # the same section. This directly addresses multi-page topics
+            # that span the full section (e.g. a Schedule or a Chapter
+            # clause) without needing keyword triggers.
+            #
+            # Gracefully no-ops on legacy indexes that lack section_id.
+            if rank < 5:
+                sid = r.get("section_id")
+                if sid:
+                    companions = section_map.get((doc, sid), [])
+                    added = 0
+                    for sib_id in companions:
+                        if sib_id == cid or sib_id in base_id_set or sib_id in expanded_ids:
+                            continue
+                        expanded_ids.add(sib_id)
+                        added += 1
+                        if added >= section_cap_per_hit:
+                            break
+                    if added:
+                        log.debug(
+                            "Section-companion fetch on rank=%d doc=%s section=%s: +%d chunks",
+                            rank, (doc or "?")[:30], sid[:8], added
+                        )
+
+    log.info("Multi-page expansion: added %d context chunks.", len(expanded_ids))
 
     # --- Hybrid Search: Keyword fallback (using precomputed token index) ---
     keyword_hits: Dict[int, float] = {}
@@ -483,6 +822,14 @@ def retrieve(question: str, index_dir: Optional[str] = None, source_type_filter:
         if not r:
             return
 
+        # Source-mode filter (preserved from current project): when the
+        # caller asks for only document or only API rows, drop everything
+        # else here so the rest of the pipeline never sees it.
+        if source_type_filter is not None:
+            row_st = r.get("source_type") or "document"
+            if row_st != source_type_filter:
+                return
+
         final_score = float(score_val)
 
         # Skip below threshold ONLY if not smart context
@@ -514,10 +861,12 @@ def retrieve(question: str, index_dir: Optional[str] = None, source_type_filter:
             "public_path": public_path,
             "doc_authority": int(r.get("doc_authority", 2) or 2),
             "search_text": r.get("search_text", ""),
-            "_is_smart_context": is_context,
+            "_is_smart_context": is_context
         }
 
-        # ── API metadata propagation (Phase 4) ──
+        # ── API metadata propagation (preserved from current project) ──
+        # Pass through API ingestion metadata so the answerer can format
+        # API-sourced evidence with the correct citation shape.
         source_type = r.get("source_type", "")
         if source_type:
             hit_obj["source_type"] = source_type
@@ -542,23 +891,9 @@ def retrieve(question: str, index_dir: Optional[str] = None, source_type_filter:
             continue
         _process_hit(cii, float(score), is_context=False)
 
-    # B) Expanded neighbor IDs (context) — with relevance check
-    # Only include expanded chunks that share at least 2 query keywords,
-    # preventing irrelevant adjacent-page content from flooding evidence.
-    _exp_q_words = set(w.lower() for w in _re.sub(r"[^\w\s]", " ", question).split()
-                       if len(w) > 2)
-    _exp_accepted = 0
+    # B) Expanded neighbor IDs (context)
     for cid in expanded_ids:
-        r = id_map.get(int(cid))
-        if r:
-            chunk_text = (r.get("text") or "").lower()
-            overlap = sum(1 for w in _exp_q_words if w in chunk_text)
-            if overlap >= 2:
-                _process_hit(int(cid), SIM_THRESHOLD, is_context=True)
-                _exp_accepted += 1
-    if _exp_accepted < len(expanded_ids):
-        log.debug("Expansion filter: accepted %d/%d context chunks",
-                  _exp_accepted, len(expanded_ids))
+        _process_hit(int(cid), SIM_THRESHOLD, is_context=True)
 
     # C) Keyword hits (IDs)
     for cid, sc in final_keyword_list:
@@ -582,10 +917,53 @@ def retrieve(question: str, index_dir: Optional[str] = None, source_type_filter:
         log.info("Pre-rerank: %d total hits across %d docs", len(all_flat_hits), len(evidence))
         reranked = rerank_hits(question, all_flat_hits)
 
-        # Rebuild doc groups from reranked order, respecting per-doc caps
+        # Phase 3: cross-document content deduplication.
+        #
+        # The previous pipeline only deduplicated inside a single document
+        # (_seen set per doc_group). Identical or near-identical content
+        # copied across multiple PDFs (e.g., CTO duties in both Annex-H
+        # and the HR Manual) therefore consumed multiple slots in the
+        # evidence budget, caused the LLM to blend or pick arbitrarily,
+        # and degraded answer quality.
+        #
+        # We now drop cross-doc duplicates at rebuild time. Keys are
+        # content fingerprints over the normalized first 500 characters
+        # (SHA-256, truncated). Since `reranked` is already sorted
+        # by the authority-aware blend score, the first occurrence of
+        # any fingerprint is the highest-authority / highest-scoring
+        # version — exactly what we want to keep.
+        seen_fingerprints: Dict[str, Dict[str, Any]] = {}
+        deduped: List[Dict[str, Any]] = []
+        dedup_dropped = 0
+        for h in reranked:
+            fp = _content_fingerprint(h.get("text") or "")
+            if not fp:
+                deduped.append(h)
+                continue
+            if fp in seen_fingerprints:
+                kept = seen_fingerprints[fp]
+                log.debug(
+                    "Cross-doc dedup: dropping duplicate from doc='%s' p.%s "
+                    "(kept: doc='%s' p.%s, blend=%.3f)",
+                    h.get("doc_name", "?"), h.get("page_start", "?"),
+                    kept.get("doc_name", "?"), kept.get("page_start", "?"),
+                    float(kept.get("_blend", kept.get("score", 0.0))),
+                )
+                dedup_dropped += 1
+                continue
+            seen_fingerprints[fp] = h
+            deduped.append(h)
+
+        if dedup_dropped:
+            log.info(
+                "Cross-doc dedup: %d duplicates removed, %d unique hits retained",
+                dedup_dropped, len(deduped)
+            )
+
+        # Rebuild doc groups from deduped, reranked order, respecting per-doc caps
         new_docs_map: Dict[str, Dict[str, Any]] = {}
         per_doc_count: Dict[str, int] = {}
-        for h in reranked:
+        for h in deduped:
             dn = h.get("doc_name", "Unknown")
             if dn not in new_docs_map:
                 new_docs_map[dn] = {
@@ -614,31 +992,156 @@ def retrieve(question: str, index_dir: Optional[str] = None, source_type_filter:
 
         evidence = list(new_docs_map.values())
         total_after = sum(len(d["hits"]) for d in evidence)
-        log.info("Post-rerank: %d hits across %d docs (per-doc cap=%d)",
+        log.info("Post-rerank + dedup: %d hits across %d docs (per-doc cap=%d)",
                  total_after, len(evidence), MAX_HITS_PER_DOC_RETRIEVAL)
 
     evidence.sort(key=lambda x: float(x.get("max_score", 0)), reverse=True)
-
-    # ── Optional source_type filter (Phase 5) ──────────────────
-    if source_type_filter:
-        _filter_val = source_type_filter.lower()
-        # Normalise: "document" matches pdf/docx/etc (anything non-api)
-        if _filter_val in ("document", "doc", "pdf", "docx"):
-            _is_match = lambda h: h.get("source_type", "pdf") != "api"
-        elif _filter_val == "api":
-            _is_match = lambda h: h.get("source_type") == "api"
-        else:
-            _is_match = lambda h: True
-
-        for doc in evidence:
-            doc["hits"] = [h for h in doc.get("hits", []) if _is_match(h)]
-        evidence = [d for d in evidence if d.get("hits")]
-        log.debug("Source-type filter '%s': %d doc groups remain", _filter_val, len(evidence))
 
     return {
         "question": question,
         "has_evidence": len(evidence) > 0,
         "evidence": evidence
+    }
+
+
+# =============================================================================
+# Phase 5 — Multi-query retrieval wrapper
+# =============================================================================
+def retrieve_multi(
+    queries: List[str],
+    index_dir: Optional[str] = None,
+    rrf_k: Optional[int] = None,
+) -> Dict[str, Any]:
+    """Run `retrieve()` for each query in `queries`, then fuse the
+    per-query evidence with Reciprocal Rank Fusion (RRF) at the
+    chunk level. Returns the same shape as `retrieve()`.
+
+    This is the entry point used by the request flow when the intent
+    layer produces multiple sub-queries (multi-part question or
+    vague-query expansion). Single-query callers should keep using
+    `retrieve()` for zero-cost backward compatibility.
+
+    Behavior guarantees:
+      • If `queries` has only one entry, this is a thin pass-through to
+        `retrieve()` so latency and behavior are unchanged.
+      • Phase 3 protections (per-doc cap, cross-doc dedup, page sort)
+        run independently inside each `retrieve()` call. The fusion
+        stage applies a SECOND content-fingerprint dedup across the
+        merged set, so duplicates introduced by overlapping sub-queries
+        are removed.
+      • Page-expansion / section-companion hits (Phase 3) are preserved
+        — they ride through the per-query call.
+      • Output contract is identical: question, has_evidence, evidence.
+        The `question` field is set to the first non-empty input query
+        (the original) so downstream logging stays meaningful.
+    """
+    cleaned = [q for q in (queries or []) if q and q.strip()]
+    if not cleaned:
+        return {"question": "", "has_evidence": False, "evidence": []}
+
+    if len(cleaned) == 1:
+        return retrieve(cleaned[0], index_dir=index_dir)
+
+    k = int(rrf_k if rrf_k is not None else int(os.getenv("RETRIEVER_RRF_K", "60")))
+
+    # Run sub-queries; collect all hits, key them by evidence_id,
+    # accumulate RRF, remember best blend score.
+    hit_by_eid: Dict[str, Dict[str, Any]] = {}
+    rrf_by_eid: Dict[str, float] = {}
+    primary_question = cleaned[0]
+
+    for qi, q in enumerate(cleaned):
+        try:
+            sub = retrieve(q, index_dir=index_dir)
+        except Exception as e:
+            log.warning("retrieve_multi: sub-query #%d failed (%s)", qi, e)
+            continue
+        if not sub.get("has_evidence"):
+            continue
+
+        # Flatten doc_groups → hits, with intra-result rank position.
+        ranked: List[Dict[str, Any]] = []
+        for dg in sub.get("evidence", []):
+            for h in dg.get("hits", []):
+                ranked.append(h)
+        # Stable sort by blend desc to assign a rank for RRF
+        ranked.sort(
+            key=lambda h: float(h.get("_blend", h.get("score", 0.0))),
+            reverse=True,
+        )
+
+        for rank, h in enumerate(ranked):
+            eid = h.get("evidence_id") or _evidence_id(h.get("text", ""))
+            if not eid:
+                continue
+            rrf_by_eid[eid] = rrf_by_eid.get(eid, 0.0) + 1.0 / (k + rank + 1)
+            # Keep the highest-blend instance for downstream consumption.
+            cur = hit_by_eid.get(eid)
+            if (cur is None) or (
+                float(h.get("_blend", h.get("score", 0.0)))
+                > float(cur.get("_blend", cur.get("score", 0.0)))
+            ):
+                # Stamp evidence_id on the kept hit so downstream code
+                # can rely on it.
+                h["evidence_id"] = eid
+                hit_by_eid[eid] = h
+
+    if not hit_by_eid:
+        log.info("retrieve_multi: %d sub-queries returned no evidence", len(cleaned))
+        return {"question": primary_question, "has_evidence": False, "evidence": []}
+
+    # Cross-sub-query content-fingerprint dedup (defense in depth — the
+    # per-call dedup already runs, but two sub-queries can surface the
+    # same content from different paths).
+    seen_fp: Dict[str, str] = {}  # fingerprint -> kept eid
+    survivors: List[str] = []
+    for eid in sorted(rrf_by_eid.keys(), key=lambda e: rrf_by_eid[e], reverse=True):
+        h = hit_by_eid.get(eid)
+        if not h:
+            continue
+        fp = _content_fingerprint(h.get("text") or "")
+        if fp and fp in seen_fp:
+            log.debug(
+                "retrieve_multi cross-query dedup: drop eid=%s (kept=%s)",
+                eid, seen_fp[fp],
+            )
+            continue
+        if fp:
+            seen_fp[fp] = eid
+        survivors.append(eid)
+
+    # Order by RRF score and re-group by document, preserving doc-order
+    # (first-doc-seen-first) and page-ascending within each doc — same
+    # convention as the answerer expects.
+    docs_map: Dict[str, Dict[str, Any]] = {}
+    for eid in survivors:
+        h = hit_by_eid[eid]
+        dn = h.get("doc_name", "Unknown")
+        if dn not in docs_map:
+            docs_map[dn] = {
+                "doc_name": dn,
+                "max_score": 0.0,
+                "doc_rank": int(h.get("doc_rank", 0) or 0),
+                "hits": [],
+            }
+        docs_map[dn]["hits"].append(h)
+        s = float(h.get("_blend", h.get("score", 0.0)))
+        if s > float(docs_map[dn]["max_score"]):
+            docs_map[dn]["max_score"] = s
+
+    evidence = list(docs_map.values())
+    evidence.sort(key=lambda d: float(d.get("max_score", 0.0)), reverse=True)
+
+    total_hits = sum(len(d["hits"]) for d in evidence)
+    log.info(
+        "retrieve_multi: fused %d sub-queries -> %d unique chunks across %d docs",
+        len(cleaned), total_hits, len(evidence),
+    )
+
+    return {
+        "question": primary_question,
+        "has_evidence": total_hits > 0,
+        "evidence": evidence,
     }
 
 
@@ -653,10 +1156,36 @@ def rewrite_contextual_query(current_query: str, last_question: str, last_answer
     IMPORTANT: Queries that already contain explicit role/position names
     are NOT rewritten — they are self-contained and rewriting them with
     session context can contaminate the search query.
+
+    Fix (Bug-diagnosis): the rewriter now ALSO runs for standalone (no
+    last_question) queries when they look like Urdu / Roman-Urdu. An
+    English-only corpus cannot be searched effectively with Roman-Urdu
+    tokens ('agr', 'kr raha', 'hoto', 'kya', 'ly sakti'); those queries
+    produce near-zero embedding similarity and trip Phase-2 refusal.
+    Translating the query to English before retrieval dramatically
+    improves recall on mixed-language traffic.
     """
     should_rewrite = os.getenv("RETRIEVER_LLM_QUERY_REWRITE_ALWAYS", "0") != "0"
 
-    if not last_question and not should_rewrite:
+    # Detect Roman-Urdu / Urdu-script queries so we translate them even
+    # when there is no prior conversation context. Keyword-based — cheap,
+    # deterministic, no LLM call needed just to decide.
+    _ROMAN_URDU_MARKERS = {
+        "agr", "agar", "kr", "kar", "kia", "kya", "hoto", "hota",
+        "raha", "rahi", "rahay", "rahe", "ly", "lain", "sakti", "sakta",
+        "btao", "batao", "bataen", "bataein", "bataye",
+        "ka", "ki", "ke", "ko", "kya", "kaun", "kon", "kaunsa", "konsi",
+        "mein", "main", "par", "pe", "se", "ye", "yeh", "woh", "us", "is",
+        "nahin", "nahi", "nhi", "na", "haan", "han", "jee",
+        "kitni", "kitna", "kitne", "kaise", "kaisi",
+        "against", "banaya",
+    }
+    q_words = {w.lower().strip("?.,!") for w in (current_query or "").split()}
+    has_urdu_script = any("\u0600" <= ch <= "\u06ff" for ch in (current_query or ""))
+    has_roman_urdu = len(q_words & _ROMAN_URDU_MARKERS) >= 2
+    needs_translation = has_urdu_script or has_roman_urdu
+
+    if not last_question and not should_rewrite and not needs_translation:
         return current_query
 
     if len(current_query) < 4 and current_query.lower() in ["ok", "thanks", "theek", "sahi"]:
@@ -664,20 +1193,15 @@ def rewrite_contextual_query(current_query: str, last_question: str, last_answer
 
     # GUARD: If the query already contains an explicit role/position,
     # don't rewrite — the user knows what they're asking about.
-    # Only use LLM rewrite for pronoun-based follow-ups.
+    # Only use LLM rewrite for pronoun-based follow-ups or translation.
     _explicit_role_re = _re.compile(
         r"\b(manager|officer|director|assistant|deputy|chief|head|coordinator|superintendent"
         r"|inspector|registrar|analyst)\s+\w+",
         _re.IGNORECASE
     )
-    # Don't skip rewrite if the query also has follow-up pronouns (Roman Urdu/English)
-    _followup_pronoun_re = _re.compile(
-        r"\b(wo|woh|ye|yeh|us|tha|thi|the|usk[aeiou]|unk[aeiou]|"
-        r"that|those|it|them|kis\b)",
-        _re.IGNORECASE
-    )
-    if _explicit_role_re.search(current_query) and not _followup_pronoun_re.search(current_query):
-        # Query has explicit role and no follow-up pronouns — just expand abbreviations, skip LLM rewrite
+    if _explicit_role_re.search(current_query) and not needs_translation:
+        # Query has explicit role AND is in English — just expand
+        # abbreviations, skip LLM rewrite.
         expanded = _expand_abbreviations(current_query)
         if expanded != current_query:
             log.info("Skip LLM rewrite (explicit role in query), abbreviation only: '%s' -> '%s'",
@@ -704,15 +1228,23 @@ def rewrite_contextual_query(current_query: str, last_question: str, last_answer
 
     system_prompt = (
         "You are a query rewriter for a RAG system about PERA (Punjab Enforcement and Regulatory Authority).\n"
-        "Your task: Rewrite the user query to be a standalone, semantically rich search query.\n"
+        "The underlying document corpus is in ENGLISH. The user's query may be in Urdu, Roman-Urdu, or English.\n"
+        "Your task: produce a standalone, semantically-rich ENGLISH search query that will retrieve the most relevant PERA document content.\n"
         "Rules:\n"
-        "1. Do NOT invent or guess abbreviation expansions. Only expand abbreviations you are certain about.\n"
-        "2. If an abbreviation is ambiguous, keep the original abbreviation.\n"
-        "3. Map broad terms to specific document phrasing (e.g. 'powers' -> 'powers, functions, responsibilities').\n"
-        "4. Urdu/Hindi: Preserve direction of action and correct subject/object.\n"
-        "5. Resolve pronouns using History if available.\n"
-        "6. Keep final query in English for best match with document corpus.\n"
-        "7. OUTPUT ONLY THE REWRITTEN QUERY."
+        "1. TRANSLATE Urdu and Roman-Urdu queries to natural English first. Preserve the user's intent and direction of action.\n"
+        "   Examples:\n"
+        "     'agr koi illegal petrol sell kr raha hoto pera kya action ly sakti us k against?'\n"
+        "        -> 'What enforcement actions can PERA take against someone illegally selling petrol?'\n"
+        "     'manager development ki salary kitni hai?'\n"
+        "        -> 'What is the salary of Manager (Development)?'\n"
+        "     'complaint kaise file karein?'\n"
+        "        -> 'How to file a complaint at PERA'\n"
+        "2. Map broad informal terms to the domain terminology PERA documents actually use. For enforcement/illegal-activity questions specifically: PERA uses the vocabulary of 'Enforcement Officer', 'inspection', 'notice', 'Removal Order', 'confiscation', 'sealing of premises', 'enforcement costs', 'public nuisance', 'encroachment', 'FIR' — prefer those exact terms.\n"
+        "3. Do NOT invent or guess abbreviation expansions. Only expand abbreviations you are certain about.\n"
+        "4. If an abbreviation is ambiguous, keep the original abbreviation.\n"
+        "5. Map broad English terms to document phrasing (e.g. 'powers' -> 'powers, functions, responsibilities').\n"
+        "6. Resolve pronouns using History if available.\n"
+        "7. OUTPUT ONLY THE REWRITTEN ENGLISH QUERY. No preamble. No explanation."
         + protection
     )
 

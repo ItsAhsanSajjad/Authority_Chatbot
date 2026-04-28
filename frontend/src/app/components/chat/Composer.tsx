@@ -11,6 +11,15 @@ interface Props {
   disabled?: boolean;
   sourceMode: AnswerSourceMode;
   onSourceModeChange: (mode: AnswerSourceMode) => void;
+  /** True while the assistant is generating a response. */
+  isGenerating?: boolean;
+  /** Stop the in-flight generation. */
+  onStop?: () => void;
+  /** Cancel + return the original prompt text so the user can edit it. */
+  onEdit?: () => string | null;
+  /** External text to pre-fill — used by the per-bubble edit feature.
+   *  Bumping this value (with a new key) triggers a refill + focus. */
+  prefill?: { text: string; key: number } | null;
 }
 
 function formatSeconds(s: number): string {
@@ -26,9 +35,35 @@ const MODE_ICONS: Record<AnswerSourceMode, string> = {
   live_api: "⚡",
 };
 
-export const Composer = memo(function Composer({ onSend, disabled, sourceMode, onSourceModeChange }: Props) {
+export const Composer = memo(function Composer({
+  onSend,
+  disabled,
+  sourceMode,
+  onSourceModeChange,
+  isGenerating = false,
+  onStop,
+  onEdit,
+  prefill,
+}: Props) {
   const [input, setInput] = useState("");
   const { ref: textareaRef, resize } = useAutoResizeTextarea(150);
+
+  // External pre-fill — used when the user clicks "edit" on a previous
+  // user message bubble. The parent updates `prefill` with a new key
+  // each time, so this effect runs on every edit click.
+  useEffect(() => {
+    if (!prefill || !prefill.text) return;
+    setInput(prefill.text);
+    window.setTimeout(() => {
+      textareaRef.current?.focus();
+      const ta = textareaRef.current;
+      if (ta) {
+        ta.selectionStart = ta.selectionEnd = ta.value.length;
+      }
+      resize();
+    }, 0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefill]);
 
   const handleTranscribed = useCallback((text: string) => {
     setInput(text);
@@ -69,7 +104,7 @@ export const Composer = memo(function Composer({ onSend, disabled, sourceMode, o
       <div className="max-w-3xl mx-auto">
         {/* Source Mode Selector */}
         <div className="source-mode-bar mb-2">
-          <span className="source-mode-label-text">Answer Source:</span>
+          <span className="source-mode-label-text">Knowledge Source</span>
           <div className="source-mode-group">
             {SOURCE_MODE_OPTIONS.map((opt) => (
               <button
@@ -131,52 +166,90 @@ export const Composer = memo(function Composer({ onSend, disabled, sourceMode, o
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
               onInput={handleInput}
-              placeholder="Ask about PERA regulations, governance, enforcement, or KPIs"
+              placeholder={isGenerating ? "Assistant is generating a response…" : "Ask about regulations, governance, enforcement, KPIs, or institutional performance…"}
               rows={1}
               className="chat-input w-full resize-none px-4 py-3 pr-24 text-sm"
               style={{ maxHeight: 150, minHeight: 44 }}
-              disabled={disabled || isRecordingOrTranscribing}
+              disabled={isRecordingOrTranscribing}
               aria-label="Message input"
             />
 
-            {/* Voice Button */}
-            <button
-              onClick={toggleRecording}
-              disabled={disabled || voiceState === "transcribing"}
-              className={`absolute right-12 bottom-2 w-9 h-9 rounded-xl flex items-center justify-center transition-all z-10 ${voiceState === "recording" ? "recording-pulse" : ""}`}
-              style={{
-                background: voiceState === "recording" ? "var(--red)" : "transparent",
-                color: voiceState === "recording" ? "white" : "var(--text-secondary)",
-              }}
-              aria-label={voiceState === "recording" ? "Stop recording" : "Start voice input"}
-              onMouseEnter={voiceState !== "recording" ? (e) => (e.currentTarget.style.background = "var(--bg-hover)") : undefined}
-              onMouseLeave={voiceState !== "recording" ? (e) => (e.currentTarget.style.background = "transparent") : undefined}
-            >
-              {voiceState === "recording" ? (
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2" /></svg>
-              ) : (
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                  <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
-                  <path d="M19 10v2a7 7 0 0 1-14 0v-2" /><line x1="12" y1="19" x2="12" y2="23" /><line x1="8" y1="23" x2="16" y2="23" />
-                </svg>
-              )}
-            </button>
+            {/* Voice Button (hidden during generation to declutter) */}
+            {!isGenerating && (
+              <button
+                onClick={toggleRecording}
+                disabled={disabled || voiceState === "transcribing"}
+                className={`absolute right-12 bottom-2 w-9 h-9 rounded-xl flex items-center justify-center transition-all z-10 ${voiceState === "recording" ? "recording-pulse" : ""}`}
+                style={{
+                  background: voiceState === "recording" ? "var(--red)" : "transparent",
+                  color: voiceState === "recording" ? "white" : "var(--text-secondary)",
+                }}
+                aria-label={voiceState === "recording" ? "Stop recording" : "Start voice input"}
+                onMouseEnter={voiceState !== "recording" ? (e) => (e.currentTarget.style.background = "var(--bg-hover)") : undefined}
+                onMouseLeave={voiceState !== "recording" ? (e) => (e.currentTarget.style.background = "transparent") : undefined}
+              >
+                {voiceState === "recording" ? (
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2" /></svg>
+                ) : (
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                    <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+                    <path d="M19 10v2a7 7 0 0 1-14 0v-2" /><line x1="12" y1="19" x2="12" y2="23" /><line x1="8" y1="23" x2="16" y2="23" />
+                  </svg>
+                )}
+              </button>
+            )}
 
-            {/* Send Button */}
-            <button
-              onClick={handleSend}
-              disabled={!input.trim() || disabled || isRecordingOrTranscribing}
-              className="send-btn absolute right-2 bottom-2 w-9 h-9 flex items-center justify-center"
-              aria-label="Send message"
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
-              </svg>
-            </button>
+            {/* Action area — switches between Send and Stop+Edit */}
+            {isGenerating ? (
+              <>
+                {/* Edit button — pop the in-flight prompt back into the input */}
+                <button
+                  onClick={() => {
+                    if (!onEdit) return;
+                    const original = onEdit();
+                    if (original) {
+                      setInput(original);
+                      // give React a tick to update before resizing/focusing
+                      window.setTimeout(() => {
+                        textareaRef.current?.focus();
+                        resize();
+                      }, 0);
+                    }
+                  }}
+                  className="composer-edit-btn absolute right-12 bottom-2 w-9 h-9 flex items-center justify-center"
+                  aria-label="Edit query"
+                  title="Stop and edit your question"
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                  </svg>
+                </button>
+
+                {/* Stop button */}
+                <button
+                  onClick={onStop}
+                  className="composer-stop-btn absolute right-2 bottom-2 w-9 h-9 flex items-center justify-center"
+                  aria-label="Stop generating"
+                  title="Stop generating"
+                >
+                  <span className="composer-stop-square" />
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={handleSend}
+                disabled={!input.trim() || disabled || isRecordingOrTranscribing}
+                className="send-btn absolute right-2 bottom-2 w-9 h-9 flex items-center justify-center"
+                aria-label="Send message"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
+                </svg>
+              </button>
+            )}
           </div>
         </div>
-
-
       </div>
     </div>
   );

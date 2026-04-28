@@ -20,6 +20,15 @@ from session_store import get_session_store, SessionTurn
 from audit_trail import log_audit_entry
 from context_state import anchor_query, extract_subject, extract_evidence_metadata
 from smalltalk_intent import decide_smalltalk
+# Phase 5 query intent (vague/multi-part/out-of-scope). Complementary to
+# query_router (which routes between document and API/structured paths).
+from query_intent import (
+    classify_intent,
+    llm_expand_vague_query,
+    INTENT_OUT_OF_SCOPE,
+    INTENT_VAGUE,
+    INTENT_FOLLOWUP,
+)
 
 # Auto-indexer (safe blue/green builds + atomic pointer switch)
 from index_manager import SafeAutoIndexer, IndexManagerConfig
@@ -48,7 +57,12 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_credentials=True,
-    allow_methods=["GET", "POST", "OPTIONS"],
+    # Include DELETE/PUT/PATCH so admin-dashboard CRUD (e.g. delete a PDF
+    # at DELETE /api/admin/documents/{filename}) survives the browser's
+    # CORS preflight. The previous list of GET/POST/OPTIONS only silently
+    # blocked DELETE — request never reached the backend, frontend saw
+    # only "Failed to fetch".
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -69,6 +83,14 @@ async def add_iframe_headers(request, call_next):
 # ============================================================
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = _settings.DATA_DIR if os.path.isabs(_settings.DATA_DIR) else os.path.join(_SCRIPT_DIR, _settings.DATA_DIR)
+# Resolved absolute path to the active-index pointer JSON. Exposed at module
+# scope so admin_routes.py (which lazy-imports fastapi_app) can read it
+# without re-resolving paths or importing settings.
+ACTIVE_POINTER_PATH = (
+    _settings.INDEX_POINTER_PATH
+    if os.path.isabs(_settings.INDEX_POINTER_PATH)
+    else os.path.join(_SCRIPT_DIR, _settings.INDEX_POINTER_PATH)
+).replace("\\", "/")
 app.mount("/assets/data", StaticFiles(directory=DATA_DIR), name="data")
 
 
@@ -160,6 +182,16 @@ def _startup():
     except Exception as e:
         log.warning("API admin routes not loaded: %s", e)
 
+    # Admin dashboard routes (login + documents CRUD + index-status).
+    # Mounted unconditionally — these power the /admin frontend regardless
+    # of the API-ingestion subsystem.
+    try:
+        from admin_routes import admin_router as _dashboard_admin_router
+        app.include_router(_dashboard_admin_router)
+        log.info("Admin dashboard routes registered")
+    except Exception as e:
+        log.warning("Admin dashboard routes not loaded: %s", e)
+
     # Phase 6: Start Challan continuous sync (PostgreSQL)
     # Two-tier: fast=5s for totals, full=60s for all other APIs
     try:
@@ -173,6 +205,21 @@ def _startup():
             log.warning("Challan scheduler did not start (PostgreSQL may be unavailable)")
     except Exception as e:
         log.error("Challan scheduler start failed (non-fatal): %s", e)
+
+    # Phase 7: Freshness scheduler — keeps inspection/officer/operational
+    # activity tables refreshed from upstream APIs so the chatbot never
+    # serves data older than ~1 hour. Three independent daemon threads,
+    # each on its own interval (configurable via FRESH_* env vars).
+    try:
+        from freshness_scheduler import get_scheduler as _get_freshness
+        _freshness = _get_freshness()
+        if _freshness.start():
+            log.info("Freshness scheduler started")
+        else:
+            log.info("Freshness scheduler not started "
+                     "(disabled or already running)")
+    except Exception as e:
+        log.error("Freshness scheduler start failed (non-fatal): %s", e)
 
 
 # ── Health / Ready Endpoints (Phase 5) ────────────────────────
@@ -188,6 +235,19 @@ def health_check():
     except Exception:
         pass
     return result
+
+
+@app.get("/api/freshness")
+def freshness_status():
+    """Per-track ingest freshness — last successful sync, current
+    staleness, and per-track running status. Used to verify that the
+    chatbot's stored API data is no more than ~1 hour behind upstream.
+    """
+    try:
+        from freshness_scheduler import get_freshness_status
+        return get_freshness_status()
+    except Exception as e:
+        return {"enabled": False, "error": str(e)}
 
 
 @app.get("/ready")
@@ -730,6 +790,26 @@ def simple_ask(request: Request, body: SimpleChatRequest):
     log.info("Query: '%s' -> Anchored: '%s' -> Rewritten: '%s'",
              question[:60], anchored_q[:60], query_for_retrieval[:60])
 
+    # ── 4b. Phase 5 — classify intent (deterministic, no LLM by default).
+    # Runs on the rewritten query so abbreviations are resolved before
+    # detection. The result is advisory: it shapes retrieval and prompts
+    # but never overrides Phase 2 grounding/refusal logic.
+    try:
+        intent_obj = classify_intent(
+            query_for_retrieval,
+            has_followup_context=bool(was_anchored),
+        )
+        intent_payload = {
+            "primary": intent_obj.primary,
+            "is_multi_part": intent_obj.is_multi_part,
+            "sub_queries": list(intent_obj.sub_queries or []),
+            "is_vague": intent_obj.is_vague,
+        }
+    except Exception as _e:  # pragma: no cover — never fail the request
+        log.warning("Intent classification failed (non-fatal): %s", _e)
+        intent_obj = None
+        intent_payload = None
+
     # ── 5. Retrieve + Answer ──────────────────────────────────
     # Live API mode — bypass normal RAG pipeline entirely
     if source_mode == "live_api":
@@ -927,6 +1007,7 @@ def simple_ask(request: Request, body: SimpleChatRequest):
         retrieval,
         conversation_history=hist_for_llm,
         answer_source_mode=source_mode,
+        intent=intent_payload,
     )
 
     # ── 6. Extract metadata for session + audit ───────────────

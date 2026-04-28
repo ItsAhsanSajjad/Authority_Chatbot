@@ -207,6 +207,23 @@ class SafeAutoIndexer:
             }
 
         build_dir = self._new_build_dir()
+
+        # ── Warm-start the new build from the previous active build ──
+        # Without this, the new build dir is empty so scan_and_ingest treats
+        # it as a cold-start and RE-EMBEDS every chunk of every PDF — even
+        # the unchanged 61 MB working paper. That's why adding a 222 KB
+        # file used to take ~2 min: ~370 OpenAI embedding round-trips.
+        # By copying chunks.jsonl + faiss.index + manifest.json from the
+        # active build, the incremental compare-with-manifest logic kicks
+        # in and we only embed the genuinely new/changed file.
+        try:
+            self._copy_prev_build_artifacts(active_dir, build_dir)
+        except Exception as exc:
+            log.warning(
+                "Could not warm-start build from %s (will fall back to "
+                "cold rebuild — slower but safe): %s", active_dir, exc,
+            )
+
         build_res = scan_and_ingest_if_needed(
             data_dir=self.cfg.data_dir,
             index_dir=build_dir,
@@ -233,6 +250,29 @@ class SafeAutoIndexer:
             "active_index_dir": build_dir,
             "build": build_res,
         }
+
+    def _copy_prev_build_artifacts(self, prev_dir: str, new_dir: str) -> None:
+        """Copy the three files scan_and_ingest_if_needed reads on entry
+        so it sees the prior state and runs the incremental delta path.
+
+        Safe to call when prev_dir is missing or partial — only copies
+        files that actually exist. Caller wraps in try/except so a copy
+        failure falls through to the (slower) cold rebuild rather than
+        crashing the request.
+        """
+        import shutil
+        if not prev_dir or not os.path.isdir(prev_dir):
+            return
+        for name in ("chunks.jsonl", "faiss.index", "manifest.json"):
+            src = os.path.join(prev_dir, name).replace("\\", "/")
+            if not os.path.exists(src):
+                continue
+            dst = os.path.join(new_dir, name).replace("\\", "/")
+            shutil.copy2(src, dst)
+        log.info(
+            "Warm-started new build from prior artifacts: %s -> %s",
+            prev_dir, new_dir,
+        )
 
     def _new_build_dir(self) -> str:
         ts = time.strftime("%Y%m%d_%H%M%S")

@@ -17,28 +17,21 @@ import type { ConnectionStatus } from "./lib/types";
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 function StatusBadge({ status }: { status: ConnectionStatus }) {
-  const colors: Record<ConnectionStatus, string> = {
-    online: "var(--green)",
-    connecting: "var(--gold)",
-    offline: "var(--red)",
-  };
   const labels: Record<ConnectionStatus, string> = {
-    online: "System Status: Active",
+    online: "System Active",
     connecting: "Connecting",
-    offline: "System Status: Unavailable",
+    offline: "System Unavailable",
   };
+  const stateClass =
+    status === "online" ? "" : status === "connecting" ? "is-connecting" : "is-offline";
   return (
-    <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
-      <div
-        className={`w-2 h-2 rounded-full ${status === "online" ? "status-ping" : ""}`}
-        style={{ background: colors[status] }}
-      />
-      <span className="text-[11px] font-medium tracking-wide" style={{ color: "var(--text-secondary)" }}>
-        {labels[status]}
-      </span>
+    <div className={`status-pill-pro ${stateClass}`} role="status" aria-live="polite">
+      <span className="status-pill-dot-pro" />
+      {labels[status]}
     </div>
   );
 }
+
 
 export default function Home() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -62,11 +55,28 @@ export default function Home() {
     lastBotIsNew,
     clearNewFlag,
     sendMessage,
+    stopGeneration,
+    editLastQuery,
+    editMessage,
     retryLastFailed,
     startNewChat,
     loadChat,
     deleteChat,
   } = useChatSessions({ reportSuccess, reportFailure });
+
+  // Pre-fill state pushed into the Composer when the user clicks the
+  // edit icon on one of their own message bubbles. Bumping `key` makes
+  // the Composer re-apply even if the same text is re-edited.
+  const [prefill, setPrefill] = useState<{ text: string; key: number } | null>(null);
+  const handleEditMessage = useCallback(
+    (index: number) => {
+      const original = editMessage(index);
+      if (original) {
+        setPrefill({ text: original, key: Date.now() });
+      }
+    },
+    [editMessage],
+  );
 
   const handleSend = useCallback(
     (text: string) => {
@@ -116,7 +126,7 @@ export default function Home() {
 
       {/* Main Area */}
       <main className="flex-1 flex flex-col relative z-10 min-w-0">
-        {/* Institutional Header */}
+        {/* Premium Institutional Header */}
         <header className="inst-header flex items-center justify-between px-4 md:px-6 py-3 z-20 relative">
           <div className="flex items-center gap-3">
             <button
@@ -131,16 +141,12 @@ export default function Home() {
                 <line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="15" y2="12" /><line x1="3" y1="18" x2="18" y2="18" />
               </svg>
             </button>
-            <Image src="/pera_logo.png" alt="PERA Emblem" width={32} height={32} className="rounded-lg" priority />
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="font-semibold text-sm tracking-wide" style={{ color: "var(--text-primary)" }}>
-                  PERA AI Assistant
-                </h1>
-              </div>
-              <p className="text-[11px] font-medium tracking-wide hidden sm:block" style={{ color: "var(--text-secondary)" }}>
-                Punjab Enforcement & Regulatory Authority
-              </p>
+            <div className="brand-emblem">
+              <Image src="/Authority_Logo.png" alt="PERA Emblem" width={32} height={32} priority />
+            </div>
+            <div className="brand-name-stack">
+              <span className="brand-name-primary">PERA AUTHORITY CHATBOT</span>
+              <span className="brand-name-secondary hidden sm:inline">Punjab Enforcement &amp; Regulatory Authority</span>
             </div>
           </div>
 
@@ -168,6 +174,7 @@ export default function Home() {
           onSendSuggestion={handleSend}
           onOpenPdf={handleOpenPdf}
           onRetry={retryLastFailed}
+          onEditMessage={handleEditMessage}
         />
 
         {/* Query Interface */}
@@ -176,6 +183,10 @@ export default function Home() {
           disabled={loading}
           sourceMode={sourceMode}
           onSourceModeChange={setSourceMode}
+          isGenerating={loading}
+          onStop={stopGeneration}
+          onEdit={editLastQuery}
+          prefill={prefill}
         />
       </main>
 

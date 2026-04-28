@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════
-   PERA AI — localStorage Persistence Layer
+   PERA AUTHORITY CHATBOT — localStorage Persistence Layer
    Versioned storage with safe migration support
    ═══════════════════════════════════════════════════════════ */
 

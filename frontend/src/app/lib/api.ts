@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════
-   PERA AI — API Client
+   PERA AUTHORITY CHATBOT — API Client
    Typed requests with proper error classification
    ═══════════════════════════════════════════════════════════ */
 
@@ -15,15 +15,23 @@ function makeError(
   return { type, message, status };
 }
 
-/** POST /api/ask */
+/** POST /api/ask
+ *
+ * `signal` lets the caller cancel an in-flight request via AbortController
+ * (used by the stop / new-chat flows). When aborted, returns a
+ * `{ ok: false, error: { type: "abort" } }` shape that the caller can
+ * silently ignore instead of surfacing as an error to the user.
+ */
 export async function askQuestion(
   req: AskRequest,
+  signal?: AbortSignal,
 ): Promise<{ ok: true; data: AskResponse } | { ok: false; error: ApiError }> {
   try {
     const res = await fetch(`${API_URL}/api/ask`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(req),
+      signal,
     });
 
     if (!res.ok) {
@@ -38,6 +46,11 @@ export async function askQuestion(
     const data: AskResponse = await res.json();
     return { ok: true, data };
   } catch (err) {
+    // User-cancelled (stop or new-chat) — surface with abort type so
+    // the caller can swallow it silently.
+    if (err instanceof DOMException && err.name === "AbortError") {
+      return { ok: false, error: makeError("abort", "cancelled") };
+    }
     const msg =
       err instanceof TypeError
         ? "Cannot reach the server. Check your connection."

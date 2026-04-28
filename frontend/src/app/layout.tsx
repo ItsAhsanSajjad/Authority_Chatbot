@@ -11,11 +11,11 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "PERA AI Assistant",
+  title: "PERA AUTHORITY CHATBOT",
   description: "Punjab Enforcement & Regulatory Authority — AI-powered document assistant for rules, regulations & governance.",
   icons: {
     icon: "/favicon.png",
-    apple: "/pera_logo.png",
+    apple: "/Authority_Logo.png",
   },
 };
 

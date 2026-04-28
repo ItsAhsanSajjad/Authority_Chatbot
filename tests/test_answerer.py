@@ -16,7 +16,9 @@ def test_support_state_wording_partially_supported():
     result = _apply_support_state_wording("The salary is 50,000 PKR.", "partially_supported")
     assert "50,000" in result
     assert "Note:" in result
-    assert "may not cover all aspects" in result
+    # Updated wording (Phase B port): the new engine phrases the partial
+    # qualification as "not stated as a single standalone clause".
+    assert "not stated as a single standalone clause" in result
 
 
 def test_support_state_wording_conflicting():
@@ -24,15 +26,18 @@ def test_support_state_wording_conflicting():
     from answerer import _apply_support_state_wording
     result = _apply_support_state_wording("The salary is 50,000 PKR.", "conflicting")
     assert "50,000" in result
-    assert "differing details" in result
+    # Updated wording (Phase B port): "differing details" → "may differ on this matter".
+    assert "may differ on this matter" in result
 
 
 def test_support_state_wording_unsupported():
-    """Unsupported state should note limited evidence but not refuse."""
+    """Unsupported state is no longer decorated by _apply_support_state_wording —
+    the caller now substitutes the entire answer text. This function returns
+    the input unchanged for that state. The test only enforces that no
+    refusal phrasing leaks into the helper's output."""
     from answerer import _apply_support_state_wording
     result = _apply_support_state_wording("Some related info...", "unsupported")
     assert "Some related info" in result
-    assert "do not directly address" in result
     # Must NOT refuse
     assert "I don't know" not in result
     assert "I cannot" not in result

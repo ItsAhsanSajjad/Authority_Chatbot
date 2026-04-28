@@ -15,6 +15,12 @@ venv311/
 .env.local
 .env.production
 
+# Admin auth — JWT signing secret generated per-install on first boot
+.admin_secret
+
+# Local tooling / sessions
+.claude/
+
 # Node / Frontend
 frontend/node_modules/
 frontend/.next/
