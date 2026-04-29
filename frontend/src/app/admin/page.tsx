@@ -14,12 +14,12 @@ import {
   FreshnessStatus,
   FreshnessTrack,
   IndexStatus,
+  clearSession,
   deleteDocument,
   freshnessStatus,
   getSession,
   indexStatus,
   listDocuments,
-  logout,
   uploadDocument,
 } from "../lib/adminApi";
 
@@ -109,6 +109,8 @@ export default function AdminDashboard() {
   const [confirm, setConfirm] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const [stage, setStage] = useState<"splash" | "ready">("splash");
+  // Sign-out flow: idle → confirm modal → signing-out overlay → /login
+  const [signoutState, setSignoutState] = useState<"idle" | "confirm" | "leaving">("idle");
   // Tracks rows exiting so we can animate them out before unmount.
   const [exitingRows, setExitingRows] = useState<Set<string>>(new Set());
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -124,6 +126,21 @@ export default function AdminDashboard() {
     setSessionEmail(s.email);
     const t = window.setTimeout(() => setStage("ready"), 900);
     return () => window.clearTimeout(t);
+  }, [router]);
+
+  // ─── Sign out: confirm → leaving overlay → soft client-side navigate ───
+  const requestSignOut = useCallback(() => setSignoutState("confirm"), []);
+  const cancelSignOut = useCallback(() => setSignoutState("idle"), []);
+  const confirmSignOut = useCallback(() => {
+    // Show the leaving overlay immediately (covers any flash) and navigate
+    // via Next.js router so the destination is rendered with full SSR + the
+    // login page's own intro animation, not a hard browser reload.
+    setSignoutState("leaving");
+    clearSession();
+    // Slight delay so the overlay animation is perceptible — feels intentional
+    window.setTimeout(() => {
+      router.replace("/login");
+    }, 450);
   }, [router]);
 
   const refresh = useCallback(async () => {
@@ -518,7 +535,7 @@ export default function AdminDashboard() {
               </svg>
               {sessionEmail}
             </div>
-            <button onClick={logout} className="admin-signout" aria-label="Sign out">
+            <button onClick={requestSignOut} className="admin-signout" aria-label="Sign out">
               <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden>
                 <path
                   d="M10 17l-1.4-1.4 2.6-2.6H3v-2h8.2L8.6 8.4 10 7l5 5-5 5Zm9-14v18h-7v-2h5V5h-5V3h7Z"
@@ -1108,6 +1125,65 @@ export default function AdminDashboard() {
           </div>
         </section>
       </main>
+
+      {/* Sign-out confirmation modal */}
+      {signoutState === "confirm" && (
+        <div className="modal-backdrop" onClick={cancelSignOut}>
+          <div className="modal modal-signout" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-glow" />
+            <div
+              className="modal-icon"
+              style={{
+                background: "linear-gradient(180deg, rgba(244,211,122,0.18), rgba(212,160,23,0.04))",
+                borderColor: "rgba(244,211,122,0.4)",
+                color: "#f4d37a",
+              }}
+            >
+              <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                <polyline points="16 17 21 12 16 7" />
+                <line x1="21" y1="12" x2="9" y2="12" />
+              </svg>
+            </div>
+            <div className="modal-title">Sign out of admin portal?</div>
+            <div className="modal-hint">
+              You will be returned to the sign-in screen. Any unsaved work will
+              be discarded — your administrator session will be terminated.
+            </div>
+            <div className="modal-actions">
+              <button onClick={cancelSignOut} className="modal-cancel">
+                Stay Signed In
+              </button>
+              <button
+                onClick={confirmSignOut}
+                className="modal-signout-confirm"
+              >
+                Sign Out
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Signing-out overlay — covers the screen during navigation so
+          the user never sees a flash of unstyled or transitional content. */}
+      {signoutState === "leaving" && (
+        <div className="signout-overlay" aria-live="polite" aria-busy="true">
+          <div className="signout-overlay-inner">
+            <div className="signout-overlay-spinner" aria-hidden>
+              <span className="signout-spinner-ring" />
+              <span className="signout-spinner-ring signout-spinner-ring-2" />
+              <span className="signout-spinner-core" />
+            </div>
+            <div className="signout-overlay-text">
+              <span className="signout-overlay-title">Signing you out</span>
+              <span className="signout-overlay-sub">
+                Securing your session and returning to the portal…
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Confirmation modal */}
       {confirm && (
@@ -3126,6 +3202,128 @@ export default function AdminDashboard() {
         .modal-cancel:disabled {
           opacity: 0.6;
           cursor: not-allowed;
+        }
+
+        /* ---------- Sign-out specific button ---------- */
+        .modal-signout-confirm {
+          flex: 1;
+          padding: 0.85rem 1rem;
+          border-radius: 12px;
+          background: linear-gradient(180deg, #f4d37a 0%, #d4a017 55%, #b8860b 100%);
+          color: #1a1307;
+          border: 0;
+          font-size: 0.92rem;
+          font-weight: 700;
+          letter-spacing: 0.02em;
+          cursor: pointer;
+          transition: transform 220ms ease, filter 220ms ease, box-shadow 220ms ease;
+          box-shadow:
+            0 12px 28px -12px rgba(212, 160, 23, 0.7),
+            inset 0 1px 0 rgba(255, 255, 255, 0.4);
+        }
+        .modal-signout-confirm:hover {
+          filter: brightness(1.08);
+          transform: translateY(-1px);
+          box-shadow: 0 16px 36px -14px rgba(212, 160, 23, 0.8);
+        }
+        .modal-signout-confirm:active {
+          transform: translateY(0);
+        }
+
+        /* ---------- Signing-out overlay ---------- */
+        .signout-overlay {
+          position: fixed;
+          inset: 0;
+          z-index: 200;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background:
+            radial-gradient(900px 500px at 30% 20%, rgba(212, 160, 23, 0.08), transparent 55%),
+            radial-gradient(800px 600px at 70% 80%, rgba(99, 102, 241, 0.06), transparent 55%),
+            linear-gradient(180deg, #060914 0%, #0a0e1c 50%, #050811 100%);
+          animation: signout-overlay-in 320ms ease-out;
+          backdrop-filter: blur(8px);
+          -webkit-backdrop-filter: blur(8px);
+        }
+        @keyframes signout-overlay-in {
+          from { opacity: 0; }
+          to   { opacity: 1; }
+        }
+        .signout-overlay-inner {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 24px;
+          animation: signout-content-in 480ms cubic-bezier(0.22, 1, 0.36, 1);
+        }
+        @keyframes signout-content-in {
+          from { opacity: 0; transform: translateY(8px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+        .signout-overlay-spinner {
+          position: relative;
+          width: 64px;
+          height: 64px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+        .signout-spinner-ring {
+          position: absolute;
+          inset: 0;
+          border-radius: 50%;
+          border: 2px dashed rgba(244, 211, 122, 0.5);
+          animation: signout-spin 1.6s linear infinite;
+        }
+        .signout-spinner-ring-2 {
+          inset: 8px;
+          border: 1.5px solid rgba(244, 211, 122, 0.25);
+          border-top-color: #f4d37a;
+          animation: signout-spin 0.9s linear infinite reverse;
+        }
+        .signout-spinner-core {
+          width: 20px;
+          height: 20px;
+          border-radius: 50%;
+          background: radial-gradient(circle at 35% 25%, #fff5d6, #f4d37a 50%, #d4a017);
+          box-shadow:
+            0 0 14px rgba(244, 211, 122, 0.7),
+            inset 0 0 0 1px rgba(255, 255, 255, 0.4);
+          animation: signout-core-pulse 1.4s ease-in-out infinite;
+        }
+        @keyframes signout-spin {
+          from { transform: rotate(0deg); }
+          to   { transform: rotate(360deg); }
+        }
+        @keyframes signout-core-pulse {
+          0%, 100% { transform: scale(1); }
+          50%      { transform: scale(1.15); }
+        }
+        .signout-overlay-text {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 6px;
+          text-align: center;
+        }
+        .signout-overlay-title {
+          font-size: 16px;
+          font-weight: 700;
+          letter-spacing: 0.04em;
+          background: linear-gradient(180deg, #fff5d6, #f4d37a 60%, #d4a017);
+          -webkit-background-clip: text;
+                  background-clip: text;
+          -webkit-text-fill-color: transparent;
+                  color: transparent;
+        }
+        .signout-overlay-sub {
+          font-size: 12px;
+          font-weight: 500;
+          letter-spacing: 0.02em;
+          color: rgba(241, 245, 251, 0.6);
+          max-width: 320px;
+          line-height: 1.5;
         }
 
         /* ---------- Toast ---------- */
