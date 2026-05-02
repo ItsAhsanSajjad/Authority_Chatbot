@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import re
 import time
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
 import requests
@@ -64,6 +64,15 @@ _INSP_KEYWORDS = re.compile(
     r"total\s+inspect(?:ion)?s?|"
     r"inspection\s+performance|"
     r"inspection\s+report|"
+    # Inspection outcome keywords (FIR, sealed, arrest, etc.)
+    r"firs?|"
+    r"sealed|sealing|"
+    r"arrest(?:ed|s)?|arrest\s+case|"
+    r"warning(?:s)?|"
+    r"no\s+offen[cs]e|"
+    r"epo|removal\s+order|"
+    r"confiscat(?:ed|ion)|"
+    r"total\s+actions|"
     # Urdu / Roman-Urdu
     r"muayina|mu[aā]yin[ae]|"
     r"jaiz[ae]|"
@@ -152,15 +161,38 @@ def _detect_location(question: str) -> Optional[Dict[str, str]]:
 
 # ── Officer name cache (from officer_inspection_record + officer_inspection_detail) ──
 _insp_officer_cache: Optional[List[str]] = None
+_insp_officer_cache_ts: float = 0
+_OFFICER_CACHE_TTL_S = 30 * 60  # refresh every 30 minutes
+
+# Stop-words excluded from name-candidate extraction (lowercase)
+_NAME_STOP_WORDS = frozenset({
+    "what", "about", "the", "same", "dates", "date", "inspections", "inspection",
+    "summary", "summery", "from", "tell", "show", "detailed", "detail", "details",
+    "total", "how", "many", "give", "officer", "officers", "please", "also",
+    "april", "may", "june", "july", "august", "september", "october", "november",
+    "december", "january", "february", "march", "with", "and", "for", "this",
+    "that", "these", "those", "report", "data", "performance", "field",
+    "regulatory", "checking", "checkings", "division", "district", "tehsil",
+    "challan", "challans", "batao", "dikhao", "kitni", "kitny", "when",
+    "where", "which", "who", "whom", "whose", "more", "less", "most", "least",
+    "first", "last", "next", "previous", "insp", "muayina", "jaiza",
+    "can", "you", "have", "has", "had", "will", "would", "could", "should",
+    "between", "during", "their", "them", "they", "been", "being", "was",
+    "were", "are", "not", "but", "only", "just", "like", "all",
+})
 
 
 def _load_insp_officer_cache() -> List[str]:
-    global _insp_officer_cache
-    if _insp_officer_cache is not None:
+    global _insp_officer_cache, _insp_officer_cache_ts
+    if (
+        _insp_officer_cache is not None
+        and (time.time() - _insp_officer_cache_ts) < _OFFICER_CACHE_TTL_S
+    ):
         return _insp_officer_cache
     db = _get_db()
     if not db:
         _insp_officer_cache = []
+        _insp_officer_cache_ts = time.time()
         return _insp_officer_cache
     try:
         rows = db.fetch_all(
@@ -168,25 +200,119 @@ def _load_insp_officer_cache() -> List[str]:
             "WHERE officer_name IS NOT NULL AND officer_name != '' "
             "UNION "
             "SELECT DISTINCT officer_name FROM officer_inspection_record "
-            "WHERE officer_name IS NOT NULL AND officer_name != ''"
+            "WHERE officer_name IS NOT NULL AND officer_name != '' "
+            "UNION "
+            "SELECT DISTINCT officer_name FROM inspection_officer_summary "
+            "WHERE officer_name IS NOT NULL AND officer_name != '' "
+            "UNION "
+            "SELECT DISTINCT created_by_name AS officer_name FROM requisition_detail "
+            "WHERE created_by_name IS NOT NULL AND created_by_name != ''"
         )
         _insp_officer_cache = [r["officer_name"] for r in rows]
     except Exception as e:
         log.warning("Failed to load inspection officer cache: %s", e)
         _insp_officer_cache = []
+    _insp_officer_cache_ts = time.time()
     return _insp_officer_cache
 
 
-def _detect_insp_officer_name(question: str) -> Optional[str]:
-    """Fuzzy-match officer name from the inspection tables."""
-    q_lower = question.lower()
-    officers = _load_insp_officer_cache()
-    if not officers:
+def _live_officer_search(question: str) -> Optional[str]:
+    """Fallback: search officer tables with SQL LIKE when cache match fails.
+
+    Extracts potential name tokens from *question* (filtering out common
+    English / Urdu / domain stop-words) and tries them pairwise against the
+    database.  On match, the officer is hot-added to the in-memory cache so
+    subsequent calls are instant.
+    """
+    db = _get_db()
+    if not db:
         return None
 
+    words = re.findall(r"[a-zA-Z]{3,}", question.lower())
+    name_candidates = [w for w in words if w not in _NAME_STOP_WORDS]
+
+    if len(name_candidates) < 2:
+        return None
+
+    # Try consecutive candidate pairs as potential first-name / last-name
+    for i in range(len(name_candidates) - 1):
+        w1, w2 = name_candidates[i], name_candidates[i + 1]
+        try:
+            row = db.fetch_one(
+                "SELECT officer_name FROM ("
+                "  SELECT DISTINCT officer_name FROM officer_inspection_detail "
+                "  WHERE officer_name IS NOT NULL AND officer_name != '' "
+                "  UNION "
+                "  SELECT DISTINCT officer_name FROM officer_inspection_record "
+                "  WHERE officer_name IS NOT NULL AND officer_name != '' "
+                "  UNION "
+                "  SELECT DISTINCT officer_name FROM inspection_officer_summary "
+                "  WHERE officer_name IS NOT NULL AND officer_name != '' "
+                "  UNION "
+                "  SELECT DISTINCT created_by_name AS officer_name FROM requisition_detail "
+                "  WHERE created_by_name IS NOT NULL AND created_by_name != ''"
+                ") sub "
+                "WHERE LOWER(officer_name) LIKE %s AND LOWER(officer_name) LIKE %s "
+                "LIMIT 1",
+                (f"%{w1}%", f"%{w2}%"),
+            )
+            if row and row.get("officer_name"):
+                officer = row["officer_name"]
+                # Hot-add to in-memory cache for future requests
+                if _insp_officer_cache is not None and officer not in _insp_officer_cache:
+                    _insp_officer_cache.append(officer)
+                log.info("Live officer search found '%s' for tokens [%s, %s]", officer, w1, w2)
+                return officer
+        except Exception as exc:
+            log.debug("Live officer search error for [%s, %s]: %s", w1, w2, exc)
+
+    return None
+
+
+def _extract_likely_person_name(question: str) -> Optional[str]:
+    """Last-resort heuristic: pull consecutive Title-Case words that are not
+    domain keywords.  Returns the candidate string (not DB-verified) or None.
+    """
+    _KW_UPPER = {
+        "What", "About", "The", "Same", "Dates", "Inspections", "Inspection",
+        "Summary", "Summery", "From", "Tell", "Show", "Detailed", "Detail",
+        "Total", "How", "Many", "Give", "Officer", "Please", "Report",
+        "April", "May", "June", "July", "August", "September", "October",
+        "November", "December", "January", "February", "March",
+        "Division", "District", "Tehsil", "Challan", "Challans", "Field",
+        "Regulatory", "Performance", "Data", "Between", "During",
+    }
+    parts: List[str] = []
+    for w in question.split():
+        clean = re.sub(r"[^a-zA-Z]", "", w)
+        if clean and clean[0].isupper() and clean not in _KW_UPPER and len(clean) >= 3:
+            parts.append(clean)
+        else:
+            if len(parts) >= 2:
+                return " ".join(parts)
+            parts = []
+    if len(parts) >= 2:
+        return " ".join(parts)
+    return None
+
+
+def _detect_insp_officer_name(question: str) -> Optional[str]:
+    """Fuzzy-match officer name from the inspection tables.
+
+    Two-phase strategy (only returns DB-verified officers):
+      1. Fast in-memory cache scan (substring match on name parts).
+      2. Live DB LIKE fallback — catches officers not yet in cache or whose
+         names are stored with different casing/spacing.
+
+    Returns None if the officer is not found in any inspection table,
+    which lets the caller fall through to a broader intent (e.g. insp_summary).
+    """
+    q_lower = question.lower()
+    officers = _load_insp_officer_cache()
+
+    # Phase 1: cache-based fuzzy match (fast, zero-cost)
     best_match = None
     best_score = 0
-
     for officer in officers:
         name_parts = officer.lower().split()
         if not name_parts:
@@ -197,7 +323,11 @@ def _detect_insp_officer_name(question: str) -> Optional[str]:
             best_score = matched
             best_match = officer
 
-    return best_match
+    if best_match:
+        return best_match
+
+    # Phase 2: live DB search (one SQL query per candidate pair)
+    return _live_officer_search(question)
 
 
 # ══════════════════════════════════════════════════════════════
@@ -315,9 +445,19 @@ def detect_inspection_followup(question: str, last_lookup_type: str) -> Optional
     if not last_lookup_type.startswith("insp_"):
         return None
 
-    # If current question has inspection keywords, treat as fresh intent
+    # If current question has inspection keywords, check for officer-swap
+    # before treating as a totally fresh intent.
+    # Scenario: prev = insp_officer:Asif Hussain → "what about the same dates
+    # inspections summery of Azka Sahar" → should route to insp_officer:Azka Sahar
     if _INSP_KEYWORDS.search(q_lower):
-        return None
+        if last_lookup_type.startswith("insp_officer:"):
+            new_officer = _detect_insp_officer_name(question)
+            if new_officer:
+                prev_officer = last_lookup_type.split("insp_officer:", 1)[-1]
+                if new_officer.lower() != prev_officer.lower():
+                    log.info("Officer-swap follow-up: '%s' → '%s'", prev_officer, new_officer)
+                    return f"insp_officer:{new_officer}"
+        return None  # has insp keywords but not an officer-swap → fresh intent
 
     # If the question is clearly about challans (not inspections), it's a NEW query
     _CHALLAN_ONLY_RE = re.compile(
@@ -448,6 +588,17 @@ def _query_insp_summary(
             "formatted_context": "No inspection performance data available.\n",
         }
 
+    # Capture snapshot date for freshness footer
+    _summary_snapshot = None
+    try:
+        _snap = db.fetch_one(
+            "SELECT MAX(snapshot_date) AS d FROM inspection_performance "
+            "WHERE level = 'division'"
+        )
+        _summary_snapshot = _snap.get("d") if _snap else None
+    except Exception:
+        pass
+
     # Compute totals
     totals = {
         "total_actions": 0, "challans": 0,
@@ -474,6 +625,18 @@ def _query_insp_summary(
             f"{r.get('warnings', 0):,} warnings, "
             f"{r.get('no_offenses', 0):,} no offenses\n"
         )
+
+    # Phase 1 — uniform freshness stamp
+    try:
+        from freshness_helper import format_freshness_footer
+        if _summary_snapshot is not None:
+            context += "\n" + format_freshness_footer(
+                "inspection_performance",
+                snapshot_date=_summary_snapshot,
+                sync_interval_s=2 * 60 * 60,
+            ) + "\n"
+    except Exception:
+        pass
 
     return {
         "source_id": "insp_summary",
@@ -622,6 +785,22 @@ def _query_insp_location(
                 f"reflects {officer_snapshot}, not {parent_snapshot}.]\n"
             )
 
+    # Phase 1 — uniform freshness stamp the LLM can surface to the user.
+    # Uses the parent (summary-table) snapshot as the headline freshness;
+    # the per-officer mismatch (if any) is already explained above.
+    try:
+        from freshness_helper import format_freshness_footer
+        if parent_snapshot is not None:
+            context += "\n" + format_freshness_footer(
+                "inspection_performance",
+                snapshot_date=parent_snapshot,
+                # Refreshed by the freshness scheduler every ~2 h
+                sync_interval_s=2 * 60 * 60,
+            ) + "\n"
+    except Exception:
+        # Footer is purely informational — never block the answer if it fails
+        pass
+
     return {
         "source_id": source_id,
         "records": parent_rows + child_rows,
@@ -696,6 +875,8 @@ def _query_tehsil_live(
     warnings = data.get("warnings", 0) or 0
     no_offenses = data.get("noOffenses", 0) or 0
     sealed = data.get("sealed", 0) or 0
+    removal_order = data.get("removalOrder", 0) or 0
+    epo = data.get("epo", 0) or 0
     officers = data.get("officers", []) or []
 
     context = f"Inspection Performance — Tehsil: {tehsil_name}\n"
@@ -707,20 +888,74 @@ def _query_tehsil_live(
     context += f"Warnings: {warnings:,}\n"
     context += f"No Offenses: {no_offenses:,}\n"
     context += f"Sealed: {sealed:,}\n"
+    if removal_order:
+        context += f"Removal Orders: {removal_order:,}\n"
+    if epo:
+        context += f"EPO (Environmental Protection Orders): {epo:,}\n"
 
     if officers:
         context += f"\nOfficer Breakdown ({len(officers)} officers):\n"
         for o in sorted(officers, key=lambda x: -(x.get("inspection", 0) or 0)):
-            context += (
-                f"  {o.get('officerName', 'Unknown')}: "
-                f"{o.get('inspection', 0):,} inspections, "
-                f"{o.get('challan', 0):,} challans, "
-                f"{o.get('warning', 0):,} warnings, "
-                f"{o.get('fir', 0)} FIRs, "
-                f"{o.get('sealed', 0)} sealed\n"
-            )
+            parts = [
+                f"{o.get('inspection', 0):,} inspections",
+                f"{o.get('challan', 0):,} challans",
+                f"{o.get('warning', 0):,} warnings",
+            ]
+            if o.get("fir", 0):
+                parts.append(f"{o['fir']} FIRs")
+            if o.get("sealed", 0):
+                parts.append(f"{o['sealed']} sealed")
+            if o.get("removalOrder", 0):
+                parts.append(f"{o['removalOrder']} removal orders")
+            if o.get("epo", 0):
+                parts.append(f"{o['epo']} EPOs")
+            context += f"  {o.get('officerName', 'Unknown')}: {', '.join(parts)}\n"
+
+    # ── Supplementary PCM data: fine amounts, arrest, confiscated ──
+    # The SDEO summary API doesn't return fine amounts or arrest counts.
+    # Fetch these from stored officer_inspection_detail (latest snapshot)
+    # so the chatbot can report them alongside the live SDEO totals.
+    fine_amount = 0
+    arrest_cases = 0
+    confiscated_count = 0
+    pcm_supplement_note = ""
+    try:
+        pcm_rows = db.fetch_all(
+            "SELECT officer_name, fine_amount, arrest_case, "
+            "       sealed AS pcm_sealed, snapshot_date "
+            "FROM officer_inspection_detail "
+            "WHERE tehsil_name = %s AND snapshot_date = ("
+            "  SELECT MAX(snapshot_date) FROM officer_inspection_detail WHERE tehsil_name = %s"
+            ")",
+            (tehsil_name, tehsil_name),
+        )
+        if pcm_rows:
+            fine_amount = sum(int(r.get("fine_amount", 0) or 0) for r in pcm_rows)
+            arrest_cases = sum(int(r.get("arrest_case", 0) or 0) for r in pcm_rows)
+            pcm_snap = pcm_rows[0].get("snapshot_date")
+            pcm_supplement_note = f"  (Fine/Arrest data from PCM snapshot {pcm_snap})"
+    except Exception as e:
+        log.debug("PCM supplement query failed for %s: %s", tehsil_name, e)
+
+    if fine_amount:
+        context += f"Fine Amount: Rs. {fine_amount:,}\n"
+    if arrest_cases:
+        context += f"Arrest Cases: {arrest_cases:,}\n"
 
     context += f"\n(Data fetched live from SDEO API for the specified date range)\n"
+    if pcm_supplement_note:
+        context += pcm_supplement_note + "\n"
+
+    # Phase 1 — live API freshness stamp
+    try:
+        from freshness_helper import format_freshness_footer
+        context += format_freshness_footer(
+            "SDEO Inspections API",
+            snapshot_date=datetime.now(),
+            source_label="SDEO Live API",
+        ) + "\n"
+    except Exception:
+        pass
 
     return {
         "source_id": source_id,
@@ -765,6 +1000,41 @@ def _query_insp_officer(
         )
 
     if not officer_info:
+        # Try inspection_officer_summary (SDEO dashboard data)
+        ios_info = db.fetch_all(
+            "SELECT DISTINCT tehsil_id, tehsil_name, district_name, division_name "
+            "FROM inspection_officer_summary "
+            "WHERE officer_name = %s LIMIT 1",
+            (officer_name,),
+        )
+        if ios_info:
+            # Officer exists only in summary table — use stored summary path
+            return _query_officer_from_summary(
+                db, officer_name, start_date, end_date, source_id,
+            )
+
+    if not officer_info:
+        # ── Cross-domain fallback: check OA/requisition data ──
+        # Officer might be an OA officer, not an inspection officer
+        try:
+            from operational_activity_lookup import execute_operational_activity_lookup
+            oa_result = execute_operational_activity_lookup(
+                f"oa_officer:{officer_name}", question=question or "",
+            )
+            if oa_result and oa_result.get("records"):
+                log.info("Cross-domain: '%s' not in inspection tables, found in OA data", officer_name)
+                oa_result["source_id"] = source_id  # keep insp_officer for session context
+                # Prepend a note so the LLM knows this is OA data, not inspection data
+                note = (
+                    f"NOTE: '{officer_name}' was not found in inspection data. "
+                    f"However, operational activity (requisition) data is available "
+                    f"for this officer and is shown below.\n\n"
+                )
+                oa_result["formatted_context"] = note + oa_result.get("formatted_context", "")
+                return oa_result
+        except Exception as e:
+            log.debug("OA cross-domain fallback failed for '%s': %s", officer_name, e)
+
         return {
             "source_id": source_id,
             "records": [],
@@ -792,6 +1062,122 @@ def _query_insp_officer(
         tehsil_name, district_name, division_name,
         source_id,
     )
+
+
+def _query_officer_from_summary(
+    db, officer_name: str,
+    start_date: Optional[date], end_date: Optional[date],
+    source_id: str,
+) -> Dict[str, Any]:
+    """Query officer data from inspection_officer_summary (SDEO dashboard table).
+
+    This table stores pre-aggregated per-officer breakdowns ingested from the
+    SDEO inspections-summary API.  Used when the officer is not found in the
+    PCM-based tables (officer_inspection_record / officer_inspection_detail).
+    """
+    from freshness_helper import format_freshness_footer
+
+    # Build the WHERE clause depending on whether dates are supplied
+    params: list = [officer_name]
+    date_filter = ""
+    if start_date and end_date:
+        date_filter = " AND start_date >= %s AND end_date <= %s"
+        params += [start_date, end_date]
+
+    rows = db.fetch_all(
+        "SELECT tehsil_name, district_name, division_name, "
+        "       start_date, end_date, "
+        "       officer_inspections, officer_challans, officer_firs, "
+        "       officer_warnings, officer_no_offenses, officer_sealed, "
+        "       snapshot_date "
+        "FROM inspection_officer_summary "
+        "WHERE officer_name = %s" + date_filter +
+        " ORDER BY snapshot_date DESC, start_date DESC",
+        tuple(params),
+    )
+
+    if not rows:
+        return {
+            "source_id": source_id,
+            "records": [],
+            "formatted_context": f"No inspection data found for officer '{officer_name}'.\n",
+        }
+
+    # Aggregate across all matching rows (could span multiple tehsils/periods)
+    total_inspections = sum(r.get("officer_inspections", 0) or 0 for r in rows)
+    total_challans = sum(r.get("officer_challans", 0) or 0 for r in rows)
+    total_firs = sum(r.get("officer_firs", 0) or 0 for r in rows)
+    total_warnings = sum(r.get("officer_warnings", 0) or 0 for r in rows)
+    total_no_offenses = sum(r.get("officer_no_offenses", 0) or 0 for r in rows)
+    total_sealed = sum(r.get("officer_sealed", 0) or 0 for r in rows)
+
+    # Location info from first row
+    first = rows[0]
+    tehsil_name = first.get("tehsil_name", "Unknown")
+    district_name = first.get("district_name", "Unknown")
+    division_name = first.get("division_name", "Unknown")
+
+    # Date range from rows
+    all_starts = [r["start_date"] for r in rows if r.get("start_date")]
+    all_ends = [r["end_date"] for r in rows if r.get("end_date")]
+    period = ""
+    if all_starts and all_ends:
+        earliest = min(all_starts)
+        latest = max(all_ends)
+        period = f" ({earliest.strftime('%d %b %Y')} – {latest.strftime('%d %b %Y')})"
+
+    context = f"Inspection Data for {officer_name}{period}\n"
+    context += f"Location: {tehsil_name}, {district_name}, {division_name}\n"
+    context += "─" * 50 + "\n"
+    context += f"  Total Inspections : {total_inspections:,}\n"
+    context += f"  Challans Issued   : {total_challans:,}\n"
+    context += f"  FIRs Filed        : {total_firs:,}\n"
+    context += f"  Warnings          : {total_warnings:,}\n"
+    context += f"  No Offense        : {total_no_offenses:,}\n"
+    context += f"  Sealed            : {total_sealed:,}\n"
+
+    # If multiple tehsils, show per-tehsil breakdown
+    tehsils_seen: Dict[str, Dict] = {}
+    for r in rows:
+        t = r.get("tehsil_name", "Unknown")
+        if t not in tehsils_seen:
+            tehsils_seen[t] = {
+                "inspections": 0, "challans": 0, "firs": 0,
+                "warnings": 0, "no_offenses": 0, "sealed": 0,
+            }
+        tehsils_seen[t]["inspections"] += r.get("officer_inspections", 0) or 0
+        tehsils_seen[t]["challans"] += r.get("officer_challans", 0) or 0
+        tehsils_seen[t]["firs"] += r.get("officer_firs", 0) or 0
+        tehsils_seen[t]["warnings"] += r.get("officer_warnings", 0) or 0
+        tehsils_seen[t]["no_offenses"] += r.get("officer_no_offenses", 0) or 0
+        tehsils_seen[t]["sealed"] += r.get("officer_sealed", 0) or 0
+
+    if len(tehsils_seen) > 1:
+        context += "\nPer-Tehsil Breakdown:\n"
+        for t, d in tehsils_seen.items():
+            context += (
+                f"  {t}: {d['inspections']} inspections, "
+                f"{d['challans']} challans, {d['firs']} FIRs, "
+                f"{d['warnings']} warnings, {d['sealed']} sealed\n"
+            )
+
+    # Freshness footer
+    snap = first.get("snapshot_date")
+    try:
+        context += "\n" + format_freshness_footer(
+            "inspection_officer_summary",
+            snapshot_date=snap,
+            sync_interval_s=2 * 60 * 60,
+            source_label="SDEO Inspection Summary",
+        )
+    except Exception:
+        pass
+
+    return {
+        "source_id": source_id,
+        "records": rows,
+        "formatted_context": context,
+    }
 
 
 def _query_officer_live(
@@ -876,6 +1262,17 @@ def _query_officer_live(
 
     context += f"\n(Data fetched live from PCM API for the specified date range)\n"
 
+    # Phase 1 — live API freshness stamp
+    try:
+        from freshness_helper import format_freshness_footer
+        context += format_freshness_footer(
+            "PCM Officer Inspections API",
+            snapshot_date=datetime.now(),
+            source_label="PCM Live API",
+        ) + "\n"
+    except Exception:
+        pass
+
     return {
         "source_id": source_id,
         "records": records,
@@ -924,6 +1321,18 @@ def _query_officer_stored(
             "formatted_context": f"No inspection data found for officer '{officer_name}'.\n",
         }
 
+    # Capture snapshot date for freshness footer
+    _officer_snapshot = None
+    try:
+        _snap = db.fetch_one(
+            "SELECT MAX(snapshot_date) AS d FROM officer_inspection_detail "
+            "WHERE officer_name = %s",
+            (officer_name,),
+        )
+        _officer_snapshot = (_snap.get("d") if _snap else None)
+    except Exception:
+        pass
+
     context = f"Inspection Data for {officer_name}\n"
     context += f"Location: {tehsil_name}, {district_name}, {division_name}\n"
     context += "=" * 50 + "\n"
@@ -948,6 +1357,18 @@ def _query_officer_stored(
         context += f"  Arrests: {a.get('arrests', 0):,}\n"
         context += f"  Confiscated: {a.get('confiscated', 0):,}\n"
         context += f"  Total Fine: Rs. {a.get('total_fine', 0):,.0f}\n"
+
+    # Phase 1 — freshness stamp for stored officer data
+    try:
+        from freshness_helper import format_freshness_footer
+        if _officer_snapshot is not None:
+            context += "\n" + format_freshness_footer(
+                "officer_inspection_detail",
+                snapshot_date=_officer_snapshot,
+                sync_interval_s=3 * 60 * 60,
+            ) + "\n"
+    except Exception:
+        pass
 
     return {
         "source_id": source_id,
@@ -983,6 +1404,16 @@ def _query_repeat_offenders(db, limit: int = 30) -> Dict[str, Any]:
             "formatted_context": "No repeat offenders found in inspection records.\n",
         }
 
+    # Capture snapshot date for freshness footer
+    _repeat_snapshot = None
+    try:
+        _snap = db.fetch_one(
+            "SELECT MAX(snapshot_date) AS d FROM officer_inspection_record"
+        )
+        _repeat_snapshot = _snap.get("d") if _snap else None
+    except Exception:
+        pass
+
     context = "Repeat Offenders — CNICs Inspected Multiple Times\n"
     context += "=" * 50 + "\n"
     context += f"Top {len(rows)} most frequently inspected CNICs:\n\n"
@@ -997,6 +1428,18 @@ def _query_repeat_offenders(db, limit: int = 30) -> Dict[str, Any]:
             f"   Officers: {r.get('officers', 'N/A')} | "
             f"Locations: {r.get('locations', 'N/A')}\n\n"
         )
+
+    # Phase 1 — freshness stamp
+    try:
+        from freshness_helper import format_freshness_footer
+        if _repeat_snapshot is not None:
+            context += "\n" + format_freshness_footer(
+                "officer_inspection_record",
+                snapshot_date=_repeat_snapshot,
+                sync_interval_s=3 * 60 * 60,
+            ) + "\n"
+    except Exception:
+        pass
 
     return {
         "source_id": source_id,
@@ -1029,6 +1472,18 @@ def _query_insp_cnic(db, cnic: str) -> Dict[str, Any]:
                 f"This person has not been inspected/challaned by any PERA officer.\n"
             ),
         }
+
+    # Capture snapshot date for freshness footer
+    _cnic_snapshot = None
+    try:
+        _snap = db.fetch_one(
+            "SELECT MAX(snapshot_date) AS d FROM officer_inspection_record "
+            "WHERE cnic = %s",
+            (cnic,),
+        )
+        _cnic_snapshot = _snap.get("d") if _snap else None
+    except Exception:
+        pass
 
     # Aggregate
     total = len(rows)
@@ -1094,6 +1549,18 @@ def _query_insp_cnic(db, cnic: str) -> Dict[str, Any]:
             f"  {i+1}. Officer: {officer} | Address: {address} | "
             f"Outcome: {outcome_str} | Fine: Rs. {fine:,.0f}\n"
         )
+
+    # Phase 1 — freshness stamp
+    try:
+        from freshness_helper import format_freshness_footer
+        if _cnic_snapshot is not None:
+            context += "\n" + format_freshness_footer(
+                "officer_inspection_record",
+                snapshot_date=_cnic_snapshot,
+                sync_interval_s=3 * 60 * 60,
+            ) + "\n"
+    except Exception:
+        pass
 
     return {
         "source_id": source_id,

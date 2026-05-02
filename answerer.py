@@ -2142,20 +2142,81 @@ _CONFLICTING_NOTE = (
 )
 
 
-# Source-mode-aware fallback messages (preserved from current project).
+# Source-mode-aware fallback messages.
 # Used by the orchestrator when retrieval returns zero evidence — picks
 # the wording matching whichever data source the user opted into.
+#
+# Each message follows the Phase-1 refusal template:
+#   1) what's unavailable (clear, honest)
+#   2) explicit "won't fabricate" assurance
+#   3) optional "closest available" slot (filled by caller when possible)
+#   4) one concrete next step the user can take
+#
+# Replaces the prior dead-end one-liners that just said "couldn't find".
 _NO_EVIDENCE_FALLBACK = {
-    "documents": "I'm sorry, I couldn't find any information about that in the PERA documents.",
-    "stored_api": "I couldn't find that in the stored API data. Try switching to Documents or Live API mode.",
-    "both": "I'm sorry, I couldn't find any information about that in the available documents or stored API data.",
-    "live_api": "I'm sorry, I couldn't find any information about that via the live API.",
+    "documents": (
+        "I could not find this in the indexed PERA documents.\n\n"
+        "I will not fabricate or estimate facts that are not in the source "
+        "material.\n\n"
+        "**Next step:** try rephrasing with a more specific term (e.g. an "
+        "Act section number, a role title, or the exact regulation name), "
+        "or switch the **Knowledge Source** to **Both** to also search the "
+        "live operational data."
+    ),
+    "stored_api": (
+        "I could not find this in the stored API data (challans, "
+        "inspections, requisitions, divisions, finance).\n\n"
+        "I will not invent numbers that are not in the synced datasets.\n\n"
+        "**Next step:** switch the **Knowledge Source** to **Documents** "
+        "for policy/governance questions, **Live API** for the very latest "
+        "value, or **Both** to search across everything."
+    ),
+    "both": (
+        "I could not find this in either the indexed PERA documents or the "
+        "stored API data.\n\n"
+        "I will not fabricate facts or estimate figures that are not in "
+        "the source material.\n\n"
+        "**Next step:** try rephrasing with a specific entity name (a "
+        "tehsil, division, officer, role, Act section, or KPI), check "
+        "spelling, or contact the data team if you believe this should "
+        "be available."
+    ),
+    "live_api": (
+        "The live API did not return data for this query.\n\n"
+        "I will not synthesise a value when the upstream system returns "
+        "no result.\n\n"
+        "**Next step:** confirm the entity name (division, district, "
+        "tehsil) is spelled correctly, or switch the **Knowledge Source** "
+        "to **Stored API** to search the locally-cached snapshot."
+    ),
 }
 
 
-def _get_no_evidence_message(answer_source_mode: str = "both") -> str:
-    """Return the source-mode-appropriate no-evidence fallback string."""
-    return _NO_EVIDENCE_FALLBACK.get(answer_source_mode, _NO_EVIDENCE_FALLBACK["both"])
+def _get_no_evidence_message(
+    answer_source_mode: str = "both",
+    closest_available: Optional[str] = None,
+) -> str:
+    """Return the source-mode-appropriate no-evidence fallback.
+
+    When ``closest_available`` is provided (a one-line description of the
+    nearest related metric the system DOES have), it's spliced into the
+    middle of the template so the user still gets useful direction
+    instead of a dead-end refusal.
+    """
+    base = _NO_EVIDENCE_FALLBACK.get(
+        answer_source_mode, _NO_EVIDENCE_FALLBACK["both"]
+    )
+    if closest_available:
+        # Splice the closest-available block in just before "Next step:"
+        marker = "**Next step:**"
+        if marker in base:
+            return base.replace(
+                marker,
+                f"**Closest available information:** {closest_available}\n\n{marker}",
+            )
+        # Defensive fallback if the template ever changes shape
+        return f"{base}\n\n**Closest available information:** {closest_available}"
+    return base
 
 
 def _apply_support_state_wording(
@@ -2407,6 +2468,33 @@ def answer_question(
         "STYLE\n"
         "16) Professional, composed, concise. Use Markdown formatting.\n"
         "17) Always answer in English, regardless of the language the user asked in.\n\n"
+
+        "STRUCTURED OUTPUT — RANKED / LIST / COMPARE / TOP / BREAKDOWN\n"
+        "18) When the user asks for a ranking, top-N, list, breakdown, "
+        "comparison, summary across multiple entities, or any answer that "
+        "naturally maps to rows × columns, render it as a Markdown table. "
+        "Use right-aligned numerical columns. Keep header labels short "
+        "(≤ 3 words). One column per fact — do not stuff multiple metrics "
+        "into a single cell.\n"
+        "19) For a single entity / single number answer, prefer a clear "
+        "sentence with the number bolded — do not force a one-row table.\n\n"
+
+        "DATA FRESHNESS (CRITICAL FOR DATABASE-DERIVED ANSWERS)\n"
+        "20) When the Context contains a freshness stamp of the form "
+        "'[FRESHNESS — <table>: <tier> · <date phrase>]', you MUST surface "
+        "that freshness information in your answer. Mention the snapshot "
+        "date and the tier (live / current / stale) so the reader knows "
+        "how recent the figure is. Quoting board-relevant numbers without "
+        "their freshness is unprofessional.\n"
+        "21) Do NOT estimate ratios, percentages, averages, trends, "
+        "growth rates, or date-range comparisons unless the exact figures "
+        "appear in the Context. If the user asks for one and only the "
+        "underlying totals are present, say so honestly: 'The exact "
+        "<metric> is not pre-computed; the underlying values are X and Y.'\n"
+        "22) If a SUMMARY total and a per-row BREAKDOWN come from "
+        "different freshness stamps in the Context, surface that "
+        "discrepancy in your answer rather than letting the reader assume "
+        "the numbers reconcile.\n\n"
 
         "CONTEXT (do not quote or reproduce the XML tags below):\n"
         f"{context_str}"

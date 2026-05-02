@@ -10,7 +10,7 @@ Returns formatted context for the LLM answerer.
 from __future__ import annotations
 
 import re
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
 from log_config import get_logger
@@ -479,6 +479,24 @@ def _query_summary(
                 f"EV={r['eviction']}, AH={r['anti_hoarding']}, PN={r['public_nuisance']})\n"
             )
 
+    # Phase 1 — uniform freshness stamp for the answerer to surface.
+    try:
+        from freshness_helper import format_freshness_footer
+        snap_row = db.fetch_one(
+            "SELECT MAX(snapshot_date) AS d FROM operational_activity"
+        )
+        snap_date = snap_row.get("d") if snap_row else None
+        if snap_date is not None:
+            context = context.rstrip() + "\n\n" + format_freshness_footer(
+                "operational_activity",
+                snapshot_date=snap_date,
+                # Refreshed by the freshness scheduler every ~2 h
+                sync_interval_s=2 * 60 * 60,
+            ) + "\n"
+    except Exception:
+        # Footer is purely informational — never block the answer if it fails
+        pass
+
     return {
         "source_id": "oa_summary",
         "records": rows,
@@ -599,6 +617,24 @@ def _query_by_officer(
                 f"Area: {area} | Squad: {arrived}/{squad}\n"
             )
 
+    # Phase 1 — freshness stamp
+    try:
+        from freshness_helper import format_freshness_footer
+        snap_row = db.fetch_one(
+            "SELECT MAX(snapshot_date) AS d FROM requisition_detail "
+            "WHERE created_by_name = %s",
+            (officer_name,),
+        )
+        snap_date = snap_row.get("d") if snap_row else None
+        if snap_date is not None:
+            context = context.rstrip() + "\n\n" + format_freshness_footer(
+                "requisition_detail",
+                snapshot_date=snap_date,
+                sync_interval_s=2 * 60 * 60,
+            ) + "\n"
+    except Exception:
+        pass
+
     records = [dict(r) for r in rows]
     return {
         "source_id": f"oa_officer:{officer_name}",
@@ -662,6 +698,21 @@ def _query_by_location(
                     f"EV={r['eviction']}, AH={r['anti_hoarding']}, PN={r['public_nuisance']})\n"
                 )
 
+        # Phase 1 — freshness stamp
+        try:
+            from freshness_helper import format_freshness_footer
+            snap_row = db.fetch_one(
+                "SELECT MAX(snapshot_date) AS d FROM operational_activity"
+            )
+            snap = snap_row.get("d") if snap_row else None
+            if snap is not None:
+                context = context.rstrip() + "\n\n" + format_freshness_footer(
+                    "operational_activity", snapshot_date=snap,
+                    sync_interval_s=2 * 60 * 60,
+                ) + "\n"
+        except Exception:
+            pass
+
         return {
             "source_id": f"oa_division:{location_name}",
             "records": children,
@@ -706,6 +757,21 @@ def _query_by_location(
                     f"(PC={r['price_control']}, AE={r['anti_encroachment']}, "
                     f"EV={r['eviction']}, AH={r['anti_hoarding']}, PN={r['public_nuisance']})\n"
                 )
+
+        # Phase 1 — freshness stamp
+        try:
+            from freshness_helper import format_freshness_footer
+            snap_row = db.fetch_one(
+                "SELECT MAX(snapshot_date) AS d FROM operational_activity"
+            )
+            snap = snap_row.get("d") if snap_row else None
+            if snap is not None:
+                context = context.rstrip() + "\n\n" + format_freshness_footer(
+                    "operational_activity", snapshot_date=snap,
+                    sync_interval_s=2 * 60 * 60,
+                ) + "\n"
+        except Exception:
+            pass
 
         return {
             "source_id": f"oa_district:{location_name}",
@@ -768,6 +834,21 @@ def _query_by_location(
                 total = sum(reqs.values())
                 parts = ", ".join(f"{k}={v}" for k, v in reqs.items())
                 context += f"  • {name}: {total} ({parts})\n"
+
+        # Phase 1 — freshness stamp
+        try:
+            from freshness_helper import format_freshness_footer
+            snap_row = db.fetch_one(
+                "SELECT MAX(snapshot_date) AS d FROM operational_activity"
+            )
+            snap = snap_row.get("d") if snap_row else None
+            if snap is not None:
+                context = context.rstrip() + "\n\n" + format_freshness_footer(
+                    "operational_activity", snapshot_date=snap,
+                    sync_interval_s=2 * 60 * 60,
+                ) + "\n"
+        except Exception:
+            pass
 
         return {
             "source_id": f"oa_tehsil:{location_name}",
@@ -966,6 +1047,22 @@ def _query_detail_aggregate(
     source_id = "oa_summary"
     if level and location_name:
         source_id = f"oa_{level}:{location_name}"
+
+    # Phase 1 — freshness stamp
+    try:
+        from freshness_helper import format_freshness_footer
+        snap_row = db.fetch_one(
+            f"SELECT MAX(snapshot_date) AS d FROM {table}"
+        )
+        snap = snap_row.get("d") if snap_row else None
+        if snap is not None:
+            context = context.rstrip() + "\n\n" + format_freshness_footer(
+                table,
+                snapshot_date=snap,
+                sync_interval_s=2 * 60 * 60,
+            ) + "\n"
+    except Exception:
+        pass
 
     return {
         "source_id": source_id,
@@ -1302,6 +1399,22 @@ def _cross_challan_new(
             for off, cnt in sorted(ch["by_officer"].items(), key=lambda x: x[1], reverse=True):
                 context += f"      {off}: {cnt}\n"
 
+    # Phase 1 — freshness stamp (cross-domain: requisition_detail + challan_data)
+    try:
+        from freshness_helper import format_freshness_footer
+        req_snap = db.fetch_one(
+            "SELECT MAX(snapshot_date) AS d FROM requisition_detail"
+        )
+        req_date = req_snap.get("d") if req_snap else None
+        if req_date is not None:
+            context = context.rstrip() + "\n\n" + format_freshness_footer(
+                "requisition_detail",
+                snapshot_date=req_date,
+                sync_interval_s=2 * 60 * 60,
+            ) + "\n"
+    except Exception:
+        pass
+
     return {
         "source_id": f"oa_cross_challan:{oa_source_id}",
         "records": req_rows,
@@ -1408,6 +1521,22 @@ def _cross_challan_legacy(
         if ch["total_fine"] > 0:
             context += f" (Rs. {ch['total_fine']:,.0f})"
         context += "\n"
+
+    # Phase 1 — freshness stamp
+    try:
+        from freshness_helper import format_freshness_footer
+        snap_row = db.fetch_one(
+            "SELECT MAX(snapshot_date) AS d FROM operational_activity_detail"
+        )
+        snap = snap_row.get("d") if snap_row else None
+        if snap is not None:
+            context = context.rstrip() + "\n\n" + format_freshness_footer(
+                "operational_activity_detail",
+                snapshot_date=snap,
+                sync_interval_s=6 * 60 * 60,
+            ) + "\n"
+    except Exception:
+        pass
 
     return {
         "source_id": f"oa_cross_challan:{oa_source_id}",

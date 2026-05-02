@@ -36,6 +36,34 @@ def _get_db():
     return get_analytics_db()
 
 
+# ── Freshness helpers ───────────────────────────────────────
+# All challan summary tables (by_division, by_district, etc.) are
+# derived from challan_data, so MAX(snapshot_date) from that table
+# is the universal freshness indicator.
+
+_CHALLAN_SYNC_S = 5 * 60   # ChallanScheduler fast-tier = 5 min
+
+def _challan_data_freshness(db=None) -> dict:
+    """Return a ``freshness`` dict suitable for ``_build_result``.
+
+    Single cheap ``MAX`` query on the indexed ``snapshot_date`` column.
+    Returns ``{"table": "challan_data", ...}`` or an empty dict on failure.
+    """
+    if db is None:
+        db = _get_db()
+    try:
+        row = db.fetch_one("SELECT MAX(snapshot_date) AS d FROM challan_data")
+        snap = row.get("d") if row else None
+        return {
+            "table": "challan_data",
+            "snapshot_date": snap,
+            "sync_interval_s": _CHALLAN_SYNC_S,
+            "source_label": "PERA Challan Data",
+        }
+    except Exception:
+        return {}
+
+
 # ── Location Name Cache ──────────────────────────────────────
 # Maps lowercase name -> list of (type, db_name) so the same name
 # at multiple hierarchy levels (e.g. "Bahawalpur" is both a division,
@@ -557,6 +585,10 @@ def _extract_date_range(question: str) -> Optional[Tuple[date, date]]:
             end = _parse_single_date(raw_end, default_year=start.year, as_end=True)
         elif end and not start:
             start = _parse_single_date(raw_start, default_year=end.year)
+        elif not start and not end:
+            # Both sides yearless (e.g. "1st march to 27 march") — use current year
+            start = _parse_single_date(raw_start, default_year=today.year)
+            end = _parse_single_date(raw_end, default_year=today.year, as_end=True)
 
         if start and end:
             if start > end:
@@ -1200,8 +1232,31 @@ def _build_result(
     records: List[Dict],
     formatted_answer: str,
     formatted_context: str,
+    freshness: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    """Build a standard lookup result dict."""
+    """Build a standard lookup result dict.
+
+    Phase-1 addition: optional ``freshness`` dict shape:
+        {"table": str, "snapshot_date": datetime|date|str|None,
+         "sync_interval_s": int|None}
+    When provided, a uniform freshness footer is appended to
+    ``formatted_context`` so the answerer can surface it. Backward
+    compatible — existing callers that don't pass ``freshness`` get
+    identical output to before.
+    """
+    if freshness:
+        try:
+            from freshness_helper import format_freshness_footer
+            footer = format_freshness_footer(
+                freshness.get("table", source_id),
+                snapshot_date=freshness.get("snapshot_date"),
+                sync_interval_s=freshness.get("sync_interval_s"),
+                source_label=freshness.get("source_label"),
+            )
+            formatted_context = (formatted_context or "").rstrip() + "\n\n" + footer + "\n"
+        except Exception:
+            # Footer is informational only — never block the result
+            pass
     return {
         "success": True,
         "source_id": source_id,
@@ -1322,6 +1377,7 @@ def _lookup_location(loc_type: str, loc_name: str) -> Optional[Dict]:
     return _build_result(
         "challan_location", f"PERA Challan — {loc_name}",
         records, "\n".join(lines), "\n".join(ctx_lines),
+        freshness=_challan_data_freshness(db),
     )
 
 
@@ -1392,6 +1448,7 @@ def _lookup_location_type(req_key: str, loc_type: str, loc_name: str) -> Optiona
                 return _build_result(
                     "challan_location", f"PERA Challan — {loc_name} ({display_type})",
                     records, "\n".join(lines), "\n".join(ctx_lines),
+                    freshness=_challan_data_freshness(db),
                 )
 
     elif loc_type in ("district", "division"):
@@ -1466,6 +1523,7 @@ def _lookup_location_type(req_key: str, loc_type: str, loc_name: str) -> Optiona
     return _build_result(
         "challan_location", f"PERA Challan — {loc_name} ({display_type})",
         records, "\n".join(lines), "\n".join(ctx_lines),
+        freshness=_challan_data_freshness(db),
     )
 
 
@@ -1497,6 +1555,9 @@ def _lookup_daterange(start_str: str, end_str: str,
 
     date_label = f"{start_date.strftime('%d %b %Y')} — {end_date.strftime('%d %b %Y')}"
 
+    # Freshness for all date-range queries (computed once)
+    _dr_freshness = _challan_data_freshness(db)
+
     # CTE to deduplicate: keep latest snapshot per challan within date range
     # Use < end_date + 1 day to include the full end day (timestamps have time component)
     dedup_cte = (
@@ -1526,7 +1587,8 @@ def _lookup_daterange(start_str: str, end_str: str,
         )
         return _format_daterange_summary(
             rows, date_label, f"Overall Challan Summary ({date_label})",
-            note="[IMPORTANT: Each challan counted ONCE via deduplication of snapshot rows.]")
+            note="[IMPORTANT: Each challan counted ONCE via deduplication of snapshot rows.]",
+            freshness=_dr_freshness)
 
     # 2. Location-specific for date range
     if sub_intent.startswith("challan_location:"):
@@ -1557,7 +1619,8 @@ def _lookup_daterange(start_str: str, end_str: str,
         )
         return _format_daterange_location_detail(
             rows, officer_rows, date_label,
-            f"Challan Summary for {loc_name} ({date_label})", loc_name)
+            f"Challan Summary for {loc_name} ({date_label})", loc_name,
+            freshness=_dr_freshness)
 
     # 3. Location + req type for date range
     if sub_intent.startswith("challan_location_type:"):
@@ -1586,7 +1649,8 @@ def _lookup_daterange(start_str: str, end_str: str,
         req_label = f" — {req_db}" if req_db else ""
         return _format_daterange_summary(
             rows, date_label,
-            f"Challan Summary for {loc_name}{req_label} ({date_label})")
+            f"Challan Summary for {loc_name}{req_label} ({date_label})",
+            freshness=_dr_freshness)
 
     # 4. Officer-specific for date range
     if sub_intent.startswith("challan_officer:"):
@@ -1615,7 +1679,8 @@ def _lookup_daterange(start_str: str, end_str: str,
         )
         return _format_daterange_officer_detail(
             rows, detail_rows, date_label,
-            f"Officer {officer_name} — Challans ({date_label})")
+            f"Officer {officer_name} — Challans ({date_label})",
+            freshness=_dr_freshness)
 
     # 5. Officer ranking at location for date range
     if sub_intent.startswith("challan_officer_at_location:"):
@@ -1646,7 +1711,8 @@ def _lookup_daterange(start_str: str, end_str: str,
         )
         return _format_daterange_officers(
             rows, date_label,
-            f"Officers in {loc_name}{req_label} ({date_label})")
+            f"Officers in {loc_name}{req_label} ({date_label})",
+            freshness=_dr_freshness)
 
     # 6. Comparison/ranking for date range
     if sub_intent.startswith("challan_comparison:"):
@@ -1677,7 +1743,8 @@ def _lookup_daterange(start_str: str, end_str: str,
             )
             return _format_daterange_officers(
                 rows, date_label,
-                f"Officer Ranking{req_label} ({date_label})")
+                f"Officer Ranking{req_label} ({date_label})",
+                freshness=_dr_freshness)
         else:
             name_col = {"division": "division_name", "district": "district_name"
                         }.get(level, "tehsil_name")
@@ -1701,7 +1768,8 @@ def _lookup_daterange(start_str: str, end_str: str,
             level_label = {"division": "Division", "district": "District"
                            }.get(level, "Tehsil")
             return _format_daterange_comparison(
-                rows, date_label, level_label, req_label)
+                rows, date_label, level_label, req_label,
+                freshness=_dr_freshness)
 
     # Fallback: overall totals
     rows = db.fetch_all(
@@ -1714,11 +1782,13 @@ def _lookup_daterange(start_str: str, end_str: str,
         tuple(base_params),
     )
     return _format_daterange_summary(
-        rows, date_label, f"Challan Summary ({date_label})")
+        rows, date_label, f"Challan Summary ({date_label})",
+        freshness=_dr_freshness)
 
 
 def _format_daterange_summary(rows, date_label: str, title: str,
-                              note: str = "") -> Optional[Dict]:
+                              note: str = "",
+                              freshness: Optional[Dict] = None) -> Optional[Dict]:
     """Format a date-range summary (status breakdown).
     Combines 'unpaid' and 'overdue' into a single 'Unpaid' category to match PERA dashboard.
     """
@@ -1770,10 +1840,12 @@ def _format_daterange_summary(rows, date_label: str, title: str,
     return _build_result(
         "challan_daterange", title,
         rows, "\n".join(lines), "\n".join(ctx_lines),
+        freshness=freshness,
     )
 
 
-def _format_daterange_officers(rows, date_label: str, title: str) -> Optional[Dict]:
+def _format_daterange_officers(rows, date_label: str, title: str,
+                               freshness: Optional[Dict] = None) -> Optional[Dict]:
     """Format date-range officer ranking."""
     if not rows:
         no_msg = f"No officer challan records found for the period {date_label}."
@@ -1810,11 +1882,13 @@ def _format_daterange_officers(rows, date_label: str, title: str) -> Optional[Di
     ctx_lines.append(f"\nGrand Total: {_fnum(grand)} challans by {len(rows)} officers")
 
     return _build_result("challan_daterange", title,
-                         rows, "\n".join(lines), "\n".join(ctx_lines))
+                         rows, "\n".join(lines), "\n".join(ctx_lines),
+                         freshness=freshness)
 
 
 def _format_daterange_comparison(rows, date_label: str,
-                                  level_label: str, req_label: str) -> Optional[Dict]:
+                                  level_label: str, req_label: str,
+                                  freshness: Optional[Dict] = None) -> Optional[Dict]:
     """Format date-range location comparison ranking."""
     title = f"{level_label} Ranking{req_label} ({date_label})"
     if not rows:
@@ -1845,11 +1919,13 @@ def _format_daterange_comparison(rows, date_label: str,
     ctx_lines.append(f"\nGrand Total: {_fnum(grand)} challans across {len(rows)} {level_label.lower()}s")
 
     return _build_result("challan_daterange", title,
-                         rows, "\n".join(lines), "\n".join(ctx_lines))
+                         rows, "\n".join(lines), "\n".join(ctx_lines),
+                         freshness=freshness)
 
 
 def _format_daterange_officer_detail(
     summary_rows, detail_rows, date_label: str, title: str,
+    freshness: Optional[Dict] = None,
 ) -> Optional[Dict]:
     """Format an officer date-range query with per-challan details for accuracy."""
     if not summary_rows and not detail_rows:
@@ -1930,11 +2006,13 @@ def _format_daterange_officer_detail(
     return _build_result(
         "challan_daterange", title,
         all_rows, "\n".join(lines), "\n".join(ctx_lines),
+        freshness=freshness,
     )
 
 
 def _format_daterange_location_detail(
     summary_rows, officer_rows, date_label: str, title: str, loc_name: str,
+    freshness: Optional[Dict] = None,
 ) -> Optional[Dict]:
     """Format a location date-range query with per-officer breakdown for accuracy.
     Combines 'unpaid' and 'overdue' into a single 'Unpaid' category to match PERA dashboard.
@@ -2005,6 +2083,7 @@ def _format_daterange_location_detail(
     return _build_result(
         "challan_daterange", title,
         summary_rows, "\n".join(lines), "\n".join(ctx_lines),
+        freshness=freshness,
     )
 
 
@@ -2128,6 +2207,7 @@ def _lookup_officer_at_location(loc_type: str, loc_name: str,
     return _build_result(
         "challan_officer_at_location", title,
         records, "\n".join(lines), "\n".join(ctx_lines),
+        freshness=_challan_data_freshness(db),
     )
 
 
@@ -2250,6 +2330,7 @@ def _lookup_officer_ranking(status: str = "paid", req_key: str = None) -> Option
     return _build_result(
         "challan_comparison", f"PERA Officer Ranking by Challans",
         records, "\n".join(lines), "\n".join(ctx_lines),
+        freshness=_challan_data_freshness(db),
     )
 
 
@@ -2381,6 +2462,7 @@ def _lookup_comparison(status: str = "paid", level: str = "tehsil",
     return _build_result(
         "challan_comparison", f"PERA Challan {level_label} Comparison — {status_title}",
         records, "\n".join(lines), "\n".join(ctx_lines),
+        freshness=_challan_data_freshness(db),
     )
 
 
@@ -2525,6 +2607,7 @@ def _lookup_officer(officer_name: str, question: str = "") -> Optional[Dict]:
     return _build_result(
         "challan_officer", f"PERA Challan Officer — {display_name}",
         records, "\n".join(lines), "\n".join(ctx_lines),
+        freshness=_challan_data_freshness(db),
     )
 
 
@@ -2566,7 +2649,21 @@ def _lookup_totals() -> Optional[Dict]:
         f"Overdue Fine Amount: Rs. {_fnum(row['overdue_fine_amount'])}"
     )
 
-    return _build_result("challan_totals", "PERA Challan Totals", records, answer, context)
+    # challan_totals is updated every ~5 s by ChallanScheduler fast-tier.
+    # Use the row's last_updated_at if present, else "now".
+    snapshot = row.get("last_updated_at") or row.get("updated_at")
+    return _build_result(
+        "challan_totals",
+        "PERA Challan Totals",
+        records,
+        answer,
+        context,
+        freshness={
+            "table": "challan_totals",
+            "snapshot_date": snapshot,
+            "sync_interval_s": 5,
+        },
+    )
 
 
 # ── Handler: By Division ─────────────────────────────────────
@@ -2615,6 +2712,7 @@ def _lookup_by_division() -> Optional[Dict]:
     return _build_result(
         "challan_by_division", "PERA Challan by Division",
         records, "\n".join(lines), "\n".join(ctx_lines),
+        freshness=_challan_data_freshness(db),
     )
 
 
@@ -2668,6 +2766,7 @@ def _lookup_by_district() -> Optional[Dict]:
     return _build_result(
         "challan_by_district", "PERA Challan by District",
         records, "\n".join(lines), "\n".join(ctx_lines),
+        freshness=_challan_data_freshness(db),
     )
 
 
@@ -2708,6 +2807,7 @@ def _lookup_by_tehsil() -> Optional[Dict]:
     return _build_result(
         "challan_by_tehsil", "PERA Challan by Tehsil",
         records, "\n".join(lines), "\n".join(ctx_lines),
+        freshness=_challan_data_freshness(db),
     )
 
 
@@ -2757,6 +2857,7 @@ def _lookup_requisition_type() -> Optional[Dict]:
     return _build_result(
         "challan_requisition_type", "PERA Challan Requisition Types",
         records, "\n".join(lines), "\n".join(ctx_lines),
+        freshness=_challan_data_freshness(db),
     )
 
 
@@ -2810,4 +2911,5 @@ def _lookup_tehsil_breakdown() -> Optional[Dict]:
     return _build_result(
         "challan_tehsil_breakdown", "PERA Challan Tehsil Breakdown",
         records, "\n".join(lines), "\n".join(ctx_lines),
+        freshness=_challan_data_freshness(db),
     )
