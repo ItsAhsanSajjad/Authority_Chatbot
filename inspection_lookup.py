@@ -39,6 +39,15 @@ PCM_OFFICER_INSPECTIONS = (
 SDEO_INSPECTIONS_SUMMARY = (
     "https://pera360.punjab.gov.pk/backend/api/sdeo-dashboard/inspections-summary"
 )
+SDEO_TOP_KPIS = (
+    "https://pera360.punjab.gov.pk/backend/api/sdeo-dashboard/top-kpis"
+)
+SDEO_CHALLAN_STATUS_BREAKDOWN = (
+    "https://pera360.punjab.gov.pk/backend/api/sdeo-dashboard/challan-status-breakdown"
+)
+PCM_DASHBOARD_COUNTS = (
+    "https://pera360.punjab.gov.pk/backend/api/Pcm/dashboard-counts"
+)
 
 
 def _get_db():
@@ -911,40 +920,73 @@ def _query_tehsil_live(
                 parts.append(f"{o['epo']} EPOs")
             context += f"  {o.get('officerName', 'Unknown')}: {', '.join(parts)}\n"
 
-    # ── Supplementary PCM data: fine amounts, arrest, confiscated ──
-    # The SDEO summary API doesn't return fine amounts or arrest counts.
-    # Fetch these from stored officer_inspection_detail (latest snapshot)
-    # so the chatbot can report them alongside the live SDEO totals.
-    fine_amount = 0
-    arrest_cases = 0
-    confiscated_count = 0
-    pcm_supplement_note = ""
+    # ── Date-ranged supplements from auxiliary SDEO endpoints ──
+    # inspections-summary returns counts but no fine/paid/arrest/PCM. The
+    # SDEO dashboard fills these from three sibling endpoints, so we mirror
+    # that here for parity with the dashboard UI.
+    fine_imposed = fine_recovered = unpaid_fine = None
+    paid_count = unpaid_count = None
+    arrest_total = pcm_total = None
     try:
-        pcm_rows = db.fetch_all(
-            "SELECT officer_name, fine_amount, arrest_case, "
-            "       sealed AS pcm_sealed, snapshot_date "
-            "FROM officer_inspection_detail "
-            "WHERE tehsil_name = %s AND snapshot_date = ("
-            "  SELECT MAX(snapshot_date) FROM officer_inspection_detail WHERE tehsil_name = %s"
-            ")",
-            (tehsil_name, tehsil_name),
-        )
-        if pcm_rows:
-            fine_amount = sum(int(r.get("fine_amount", 0) or 0) for r in pcm_rows)
-            arrest_cases = sum(int(r.get("arrest_case", 0) or 0) for r in pcm_rows)
-            pcm_snap = pcm_rows[0].get("snapshot_date")
-            pcm_supplement_note = f"  (Fine/Arrest data from PCM snapshot {pcm_snap})"
+        kpi = requests.get(
+            SDEO_TOP_KPIS,
+            params={"tehsilId": tehsil_id,
+                    "startDate": start_date.isoformat(),
+                    "endDate": api_end_date.isoformat()},
+            headers=_HEADERS, timeout=_API_TIMEOUT,
+        ).json()
+        if isinstance(kpi, dict):
+            fine_imposed = kpi.get("totalFineImposed")
+            fine_recovered = kpi.get("totalFineRecovered")
+            unpaid_fine = kpi.get("unpaidFineAmount")
     except Exception as e:
-        log.debug("PCM supplement query failed for %s: %s", tehsil_name, e)
+        log.debug("top-kpis fetch failed for %s: %s", tehsil_name, e)
 
-    if fine_amount:
-        context += f"Fine Amount: Rs. {fine_amount:,}\n"
-    if arrest_cases:
-        context += f"Arrest Cases: {arrest_cases:,}\n"
+    try:
+        cs = requests.get(
+            SDEO_CHALLAN_STATUS_BREAKDOWN,
+            params={"tehsilId": tehsil_id,
+                    "startDate": start_date.isoformat(),
+                    "endDate": api_end_date.isoformat()},
+            headers=_HEADERS, timeout=_API_TIMEOUT,
+        ).json()
+        if isinstance(cs, dict):
+            paid_count = cs.get("paidCount")
+            unpaid_count = cs.get("unpaidCount")
+    except Exception as e:
+        log.debug("challan-status-breakdown fetch failed for %s: %s", tehsil_name, e)
 
-    context += f"\n(Data fetched live from SDEO API for the specified date range)\n"
-    if pcm_supplement_note:
-        context += pcm_supplement_note + "\n"
+    # PCM/dashboard-counts ignores date filter — returns all-time totals.
+    # Surface arrest + PCM with an explicit "all-time" disclosure.
+    try:
+        pcm_dc = requests.get(
+            PCM_DASHBOARD_COUNTS,
+            params={"tehsilId": tehsil_id},
+            headers=_HEADERS, timeout=_API_TIMEOUT,
+        ).json()
+        if isinstance(pcm_dc, dict):
+            arrest_total = pcm_dc.get("totalArrest")
+            pcm_total = pcm_dc.get("totalPCM")
+    except Exception as e:
+        log.debug("Pcm/dashboard-counts fetch failed for %s: %s", tehsil_name, e)
+
+    if fine_imposed is not None:
+        context += f"Fine Amount (imposed): Rs. {int(fine_imposed):,}\n"
+    if fine_recovered is not None:
+        context += f"Fine Recovered (paid): Rs. {int(fine_recovered):,}\n"
+    if unpaid_fine is not None:
+        context += f"Fine Outstanding (unpaid): Rs. {int(unpaid_fine):,}\n"
+    if paid_count is not None:
+        context += f"Paid Challans: {int(paid_count):,}\n"
+    if unpaid_count is not None:
+        context += f"Unpaid Challans: {int(unpaid_count):,}\n"
+    if arrest_total is not None:
+        context += f"Arrest Cases (all-time): {int(arrest_total):,}\n"
+    if pcm_total is not None:
+        context += f"PCM (all-time): {int(pcm_total):,}\n"
+
+    context += "\n(Counts and fines are filtered by the requested date range. "
+    context += "Arrest and PCM totals are all-time figures from the PCM dashboard endpoint.)\n"
 
     # Phase 1 — live API freshness stamp
     try:

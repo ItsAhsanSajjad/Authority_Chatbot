@@ -700,7 +700,7 @@ def _strip_dates_from_question(q: str) -> str:
 # ── Intent Detection ─────────────────────────────────────────
 
 _CHALLAN_PATTERNS = [
-    re.compile(r"\b(?:challan|challans|chalaan|challaan)\b", re.I),
+    re.compile(r"\bch[ae]+l+a+ns?\b", re.I),
     re.compile(r"\b(?:fine|fines|penalty|penalties)\b", re.I),
     re.compile(r"\b(?:violation|violations|offence|offenses)\b", re.I),
     re.compile(r"\b(?:enforcement\s+action|enforcement\s+data)\b", re.I),
