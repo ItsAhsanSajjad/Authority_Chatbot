@@ -81,6 +81,24 @@ def log_audit_entry(
     answer_source_mode: str = "",
     live_api_used: bool = False,
     live_api_endpoint: str = "",
+    # Phase-6 (diagnostic): intent confidence + structured-turn diagnostics
+    chosen_intent: str = "",
+    intent_confidence: Optional[float] = None,
+    runner_up_intent: str = "",
+    runner_up_confidence: Optional[float] = None,
+    matched_signals: Optional[List[str]] = None,
+    structured_last_turn_before: Optional[Dict[str, Any]] = None,
+    structured_last_turn_after: Optional[Dict[str, Any]] = None,
+    date_range_detected: str = "",
+    date_range_source: str = "",
+    date_parse_error: bool = False,
+    entity_resolution: Optional[Dict[str, Any]] = None,
+    numeric_validation_result: Optional[Dict[str, Any]] = None,
+    deterministic_answer_used: bool = False,
+    live_api_reason: str = "",
+    tehsils_attempted: Optional[int] = None,
+    tehsils_failed: Optional[int] = None,
+    tehsils_failed_names: Optional[List[str]] = None,
     extra: Optional[Dict[str, Any]] = None,
 ) -> None:
     """Write one audit entry atomically."""
@@ -150,6 +168,42 @@ def log_audit_entry(
         entry["live_api_used"] = True
         if live_api_endpoint:
             entry["live_api_endpoint"] = live_api_endpoint
+
+    # Phase-6 diagnostics (only emitted when caller supplies them).
+    if chosen_intent:
+        entry["chosen_intent"] = chosen_intent
+    if intent_confidence is not None:
+        entry["intent_confidence"] = round(float(intent_confidence), 3)
+    if runner_up_intent:
+        entry["runner_up_intent"] = runner_up_intent
+    if runner_up_confidence is not None:
+        entry["runner_up_confidence"] = round(float(runner_up_confidence), 3)
+    if matched_signals:
+        entry["matched_signals"] = matched_signals[:10]
+    if structured_last_turn_before is not None:
+        entry["structured_last_turn_before"] = structured_last_turn_before
+    if structured_last_turn_after is not None:
+        entry["structured_last_turn_after"] = structured_last_turn_after
+    if date_range_detected:
+        entry["date_range_detected"] = date_range_detected
+    if date_range_source:
+        entry["date_range_source"] = date_range_source
+    if date_parse_error:
+        entry["date_parse_error"] = True
+    if entity_resolution:
+        entry["entity_resolution"] = entity_resolution
+    if numeric_validation_result:
+        entry["numeric_validation_result"] = numeric_validation_result
+    if deterministic_answer_used:
+        entry["deterministic_answer_used"] = True
+    if live_api_reason:
+        entry["live_api_reason"] = live_api_reason
+    if tehsils_attempted is not None:
+        entry["tehsils_attempted"] = tehsils_attempted
+    if tehsils_failed is not None:
+        entry["tehsils_failed"] = tehsils_failed
+    if tehsils_failed_names:
+        entry["tehsils_failed_names"] = tehsils_failed_names[:10]
 
     if extra:
         entry["extra"] = extra

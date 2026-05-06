@@ -126,6 +126,10 @@ def _detect_location(question: str) -> Optional[Dict[str, Any]]:
     Detect location (division/district/tehsil) mentioned in question.
     Returns dict with level, name, and IDs, or None.
 
+    Production wiring: pera_entities alias resolver runs FIRST so dotted
+    division names (D.G. Khan / DG Khan / Dera Ghazi Khan) resolve to
+    the canonical DB form before substring matching.
+
     If user explicitly says 'division'/'district'/'tehsil', honour that level.
     Otherwise check tehsils → districts → divisions (most specific first).
     """
@@ -133,6 +137,25 @@ def _detect_location(question: str) -> Optional[Dict[str, Any]]:
     cache = _load_location_cache()
     if not cache:
         return None
+
+    # Step 0 — alias resolver (Task 2). Skip on explicit non-division
+    # keywords so we don't override district/tehsil queries.
+    import re as _re_oa
+    if not _re_oa.search(r"\b(district|tehsil[s]?|station[s]?)\b",
+                         (question or "").lower()):
+        try:
+            from pera_entities import canonical_division_name
+            canon_div = canonical_division_name(question)
+            if canon_div:
+                for div in cache.get("divisions", []):
+                    if (div.get("division_name") or "").lower() == canon_div.lower():
+                        return {
+                            "level": "division",
+                            "division_id": div["division_id"],
+                            "division_name": div["division_name"],
+                        }
+        except Exception:
+            pass
 
     # Detect if user explicitly mentions a level
     explicit_level = None

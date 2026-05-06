@@ -30,50 +30,193 @@ _DEFAULT_DB_PATH = os.path.join("data", "api_ingestion.db")
 # ── Public API (unchanged interface for fastapi_app.py) ──────
 
 
-def detect_lookup_intent(question: str) -> Optional[str]:
+import re as _re_for_dispatch
+from dataclasses import dataclass as _dc, field as _dc_field
+from typing import List as _List
+
+
+@_dc
+class IntentCandidate:
+    """Candidate intent emitted by a domain detector with a confidence
+    score and the signals that contributed to the score. Used by the
+    dispatcher to break ties without changing existing detector APIs.
+    """
+    domain: str                          # inspection | challan | oa | api
+    intent: str                          # raw intent string
+    score: float = 0.0
+    matched_signals: _List[str] = _dc_field(default_factory=list)
+    source: str = ""                     # detector function name
+
+
+# ── Signal regexes used for scoring ─────────────────────────
+_DOMAIN_KW = {
+    "inspection": _re_for_dispatch.compile(
+        r"\b(inspect(?:ion)?s?|fir(?:s)?|sealed|warning(?:s)?|"
+        r"removal\s+orders?|epo|no\s+offen[cs]es?|muayina|jaiz[ae]|"
+        r"summery|summary|summmery)\b", _re_for_dispatch.I),
+    "challan": _re_for_dispatch.compile(
+        r"\bch[ae]+l+a+n+s?\b|\bfine\s*amount\b|\bpaid\b|\bunpaid\b|"
+        r"\boverdue\b|\brecovery\b", _re_for_dispatch.I),
+    "oa": _re_for_dispatch.compile(
+        r"\boperational?\s+activit(?:y|ies)\b|\boperations?\b|"
+        r"\brequisition(?:s)?\b", _re_for_dispatch.I),
+}
+_METRIC_KW = _re_for_dispatch.compile(
+    r"\b(fir(?:s)?|sealed|challans?|warnings?|inspections?|"
+    r"paid|unpaid|overdue|recovered|recovery|fine|amount|"
+    r"top|highest|lowest|maximum|minimum|most|least)\b",
+    _re_for_dispatch.I,
+)
+_LEVEL_KW = _re_for_dispatch.compile(
+    r"\b(tehsils?|stations?|districts?|divisions?)\b", _re_for_dispatch.I,
+)
+_RANK_KW = _re_for_dispatch.compile(
+    r"\b(top\s*\d*|most|highest|maximum|max|largest|biggest|"
+    r"sab\s*s[ey]\s*z[iy]ada|sabse\s*z[iy]ada|konsa|kaunsa|which|"
+    r"rank(?:ing)?|leading|leader|"
+    r"least|lowest|minimum|min|kam\s*(?:ziada|zyada)|sab\s*s[ey]\s*kam)\b",
+    _re_for_dispatch.I,
+)
+_OFFICER_KW = _re_for_dispatch.compile(
+    r"\b(officer|officers|inspector|sub[-\s]?inspector|"
+    r"by\s+(?:rabia|ahmad|amir|shakeel|maliha|muhammad|m\.|m\s+))",
+    _re_for_dispatch.I,
+)
+
+
+def _score_candidate(intent: str, domain: str, question: str,
+                     last_turn_domain: str = "") -> IntentCandidate:
+    """Apply heuristic scoring rules to a single (intent, domain) pair."""
+    signals: _List[str] = []
+    score = 0.30  # base score so any matched intent beats no-match
+    pat = _DOMAIN_KW.get(domain)
+    if pat and pat.search(question or ""):
+        score += 0.30
+        signals.append("domain_keyword")
+    if _METRIC_KW.search(question or ""):
+        score += 0.25
+        signals.append("metric_keyword")
+    if _LEVEL_KW.search(question or ""):
+        score += 0.15
+        signals.append("level_keyword")
+    if _RANK_KW.search(question or ""):
+        score += 0.15
+        signals.append("rank_keyword")
+    if _OFFICER_KW.search(question or ""):
+        score += 0.10
+        signals.append("officer_keyword")
+    # Date range detection (cheap)
+    try:
+        from pera_dates import parse_date_range
+        if parse_date_range(question or ""):
+            score += 0.10
+            signals.append("date_range")
+    except Exception:
+        pass
+    # Same-domain follow-up bonus
+    if last_turn_domain and last_turn_domain == domain:
+        score += 0.10
+        signals.append("followup_same_domain")
+    # Cap on shared-vocabulary intents
+    if domain == "oa" and not _DOMAIN_KW["oa"].search(question or ""):
+        score = min(score, 0.55)
+    if domain in ("inspection", "challan") and "domain_keyword" not in signals:
+        score = min(score, 0.60)
+    return IntentCandidate(
+        domain=domain, intent=intent, score=round(score, 3),
+        matched_signals=signals,
+    )
+
+
+def detect_lookup_candidates(
+    question: str,
+    last_turn_domain: str = "",
+) -> _List[IntentCandidate]:
+    """Run every domain detector and wrap each non-None result in a
+    scored candidate. Returns the candidates sorted by score (desc).
+    """
+    out: _List[IntentCandidate] = []
+
+    try:
+        from operational_activity_lookup import detect_operational_activity_intent
+        oa_id = detect_operational_activity_intent(question)
+        if oa_id:
+            c = _score_candidate(oa_id, "oa", question, last_turn_domain)
+            c.source = "detect_operational_activity_intent"
+            out.append(c)
+    except ImportError:
+        pass
+
+    try:
+        from inspection_lookup import detect_inspection_intent
+        insp_id = detect_inspection_intent(question)
+        if insp_id:
+            c = _score_candidate(insp_id, "inspection", question, last_turn_domain)
+            c.source = "detect_inspection_intent"
+            out.append(c)
+    except ImportError:
+        pass
+
+    try:
+        from challan_lookup import detect_challan_intent
+        challan_id = detect_challan_intent(question)
+        if challan_id:
+            c = _score_candidate(challan_id, "challan", question, last_turn_domain)
+            c.source = "detect_challan_intent"
+            out.append(c)
+    except ImportError:
+        pass
+
+    try:
+        from api_lookup_registry import detect_lookup_intent as _detect
+        api_id = _detect(question)
+        if api_id:
+            c = _score_candidate(api_id, "api", question, last_turn_domain)
+            c.source = "api_lookup_registry"
+            out.append(c)
+    except ImportError:
+        pass
+
+    out.sort(key=lambda x: x.score, reverse=True)
+    return out
+
+
+def choose_best_candidate(
+    candidates: _List[IntentCandidate],
+    last_turn_domain: str = "",
+) -> Optional[IntentCandidate]:
+    """Pick the highest-scoring candidate. On near-ties (≤0.05), prefer
+    the candidate whose domain matches the previous turn.
+    """
+    if not candidates:
+        return None
+    best = candidates[0]
+    if len(candidates) >= 2:
+        runner = candidates[1]
+        if (best.score - runner.score) <= 0.05 and last_turn_domain:
+            if (runner.domain == last_turn_domain
+                    and best.domain != last_turn_domain):
+                return runner
+    return best
+
+
+def detect_lookup_intent(question: str,
+                         last_turn_domain: str = "") -> Optional[str]:
     """
     Detect if a question is a known reference/lookup query.
 
     Returns a ``source_id`` string, or ``None``.
 
-    Checks (in order):
-      1. Operational activity queries → ``oa_*`` source IDs
-         (checked first so "requisitions" / "operational activity" keywords
-          aren't swallowed by the broader challan patterns)
-      2. Challan queries  → ``challan_*`` source IDs
-      3. YAML-registered APIs → ``app_data_divisions`` etc.
+    Production wiring (Task 3): runs every domain detector, scores each,
+    picks the highest. Public API kept identical so existing callers
+    keep working.
+
+    Pass `last_turn_domain` (string from `LastTurn.domain`) to bias
+    near-tie decisions toward the previous turn's domain.
     """
-    # 1. Operational activity queries (PostgreSQL)
-    #    Checked BEFORE challans so OA-specific keywords get priority
-    try:
-        from operational_activity_lookup import detect_operational_activity_intent
-        oa_id = detect_operational_activity_intent(question)
-        if oa_id:
-            return oa_id
-    except ImportError:
-        pass
-
-    # 2. Inspection performance queries (PostgreSQL)
-    try:
-        from inspection_lookup import detect_inspection_intent
-        insp_id = detect_inspection_intent(question)
-        if insp_id:
-            return insp_id
-    except ImportError:
-        pass
-
-    # 3. Challan queries (dedicated relational DB)
-    try:
-        from challan_lookup import detect_challan_intent
-        challan_id = detect_challan_intent(question)
-        if challan_id:
-            return challan_id
-    except ImportError:
-        pass
-
-    # 3. YAML-registered generic lookups
-    from api_lookup_registry import detect_lookup_intent as _detect
-    return _detect(question)
+    cands = detect_lookup_candidates(question, last_turn_domain)
+    best = choose_best_candidate(cands, last_turn_domain)
+    return best.intent if best else None
 
 
 def execute_lookup(
@@ -184,6 +327,15 @@ def build_lookup_retrieval(
         "question": "",
         "has_evidence": True,
         "_has_primary_lookup": True,
+        # Production wiring: forward deterministic answer + evidence type
+        # so the answerer can bypass LLM rendering for ranking/aggregate
+        # tables and the numeric validator can compare answer vs payload.
+        "deterministic_answer": lookup_result.get("deterministic_answer"),
+        "structured_payload": (
+            lookup_result.get("structured_payload")
+            or consolidated_text
+        ),
+        "evidence_type": lookup_result.get("evidence_type"),
         "evidence": [{
             "doc_name": display_name,
             "max_score": 0.95,
@@ -226,5 +378,9 @@ def merge_lookup_with_rag(
         "question": rag_retrieval.get("question", ""),
         "has_evidence": bool(merged_evidence),
         "_has_primary_lookup": has_primary,
+        # Forward deterministic answer if the lookup side produced one.
+        "deterministic_answer": lookup_retrieval.get("deterministic_answer"),
+        "structured_payload": lookup_retrieval.get("structured_payload"),
+        "evidence_type": lookup_retrieval.get("evidence_type"),
         "evidence": merged_evidence,
     }

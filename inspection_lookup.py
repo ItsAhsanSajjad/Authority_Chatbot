@@ -79,13 +79,21 @@ _INSP_KEYWORDS = re.compile(
     r"arrest(?:ed|s)?|arrest\s+case|"
     r"warning(?:s)?|"
     r"no\s+offen[cs]e|"
-    r"epo|removal\s+order|"
+    r"epo|removal\s+orders?|"
     r"confiscat(?:ed|ion)|"
     r"total\s+actions|"
     # Urdu / Roman-Urdu
     r"muayina|mu[aā]yin[ae]|"
     r"jaiz[ae]|"
-    r"checking|checkings"
+    r"checking|checkings|"
+    # "summary" + common typos (summery, summmery, summari, etc.) and
+    # related general-status words. Without these, a higher-authority
+    # query like "tell me the summary of Lahore districts from 1 Jan
+    # to 10 Jan 2026" gets dropped on the keyword gate even though the
+    # location and date range are clearly present.
+    r"summ+[ae]r+i?y?|summer+y|"
+    r"performance\s+(?:report|summary|stats|figures)|"
+    r"overall\s+(?:summary|performance|figures|report)"
     r")\b",
     re.I,
 )
@@ -136,15 +144,50 @@ def _detect_location(question: str) -> Optional[Dict[str, str]]:
     _load_location_cache()
     q_lower = question.lower()
 
-    # If user explicitly says "division" / "district" / "tehsil", respect that
+    # ── pera_entities alias resolver runs FIRST (production wiring) ──
+    # Catches D.G. Khan / DG Khan / Dera Ghazi Khan and any other alias
+    # entries before the substring-match path runs. SKIPPED when the
+    # user explicitly typed "district" or "tehsil" — the alias map
+    # only carries division names, so promoting to division on a
+    # district query would be wrong.
+    _explicit_non_division = re.search(
+        r"\b(district|tehsil[s]?|station[s]?)\b", q_lower,
+    )
+    if not _explicit_non_division:
+        try:
+            from pera_entities import canonical_division_name
+            canon_div = canonical_division_name(question)
+            if canon_div:
+                return {"level": "division", "division_name": canon_div}
+        except Exception:
+            pass
+
+    # If user explicitly says "division" / "district" / "tehsil", respect that.
+    # PERA also calls tehsils "stations" colloquially in the dashboard UI.
     explicit_div = re.search(r"\bdivision\b", q_lower)
     explicit_dist = re.search(r"\bdistrict\b", q_lower)
-    explicit_teh = re.search(r"\btehsil\b", q_lower)
+    explicit_teh = re.search(r"\btehsil[s]?\b|\bstation[s]?\b", q_lower)
+
+    def _tehsil_token_match(tname: str) -> bool:
+        """True if every meaningful word of `tname` (excluding common
+        suffix tokens like 'Town', 'Cantt') appears in the query.
+        Lets users say 'allama iqbal' and still hit 'Allama Iqbal Town'.
+        """
+        suffixes = {"town", "cantt", "city", "saddar", "hq"}
+        toks = [t for t in re.findall(r"[a-z]+", tname.lower())
+                if t not in suffixes]
+        if len(toks) < 2:
+            return False
+        return all(re.search(rf"\b{re.escape(t)}\b", q_lower) for t in toks)
 
     # Explicit level requested — check that level first
     if explicit_teh:
         for t in (_TEHSIL_NAMES or []):
             if t.lower() in q_lower:
+                return {"level": "tehsil", "tehsil_name": t}
+        # Fallback: token match (handles "allama iqbal" → "Allama Iqbal Town")
+        for t in (_TEHSIL_NAMES or []):
+            if _tehsil_token_match(t):
                 return {"level": "tehsil", "tehsil_name": t}
     if explicit_div:
         for dv in (_DIVISION_NAMES or []):
@@ -174,12 +217,120 @@ _insp_officer_cache_ts: float = 0
 _OFFICER_CACHE_TTL_S = 30 * 60  # refresh every 30 minutes
 
 # Stop-words excluded from name-candidate extraction (lowercase)
+# ── Ranking intent (top-N / which-most queries) ──────────────
+# Triggered by superlatives + a metric + (optionally) an admin level.
+_RANK_TRIGGER_RE = re.compile(
+    r"\b("
+    r"top\s*\d*|most|highest|maximum|max|"
+    r"largest|biggest|sab\s*s[ey]\s*z[iy]ada|sabse\s*z[iy]ada|"
+    r"konsa|kaunsa|which|kis\s+(?:tehsil|station|district|division)|"
+    r"rank(?:ing)?|leading|leader|"
+    r"least|lowest|minimum|min|kam\s*(?:ziada|zyada)|sab\s*s[ey]\s*kam"
+    r")\b",
+    re.I,
+)
+
+_RANK_LEAST_RE = re.compile(
+    r"\b(least|lowest|minimum|min|kam\s*(?:ziada|zyada)|sab\s*s[ey]\s*kam)\b",
+    re.I,
+)
+
+# Order matters — most specific patterns first. Payment-status qualifiers
+# (paid/unpaid/overdue) must be checked BEFORE the bare "challans" pattern,
+# otherwise "stations with most challans which actually paid" lands on the
+# generic challan-count metric and the answer ignores the payment filter.
+_RANK_METRIC_MAP = [
+    ("fine_amount", re.compile(
+        r"\b(fine\s*amount|total\s*fine|fine\s+imposed|imposed\s+fine)\b", re.I)),
+    ("paid_challans", re.compile(
+        r"\b(paid|recovered|received|actually\s+paid|jo\s+pay|recovery)\b", re.I)),
+    ("unpaid_challans", re.compile(
+        r"\b(unpaid|outstanding|pending(?!\s+(?:request|case))|not\s+paid|"
+        r"un[\s-]?recovered|baki|jo\s+nahi\s+pay)\b", re.I)),
+    ("overdue_challans", re.compile(
+        r"\b(overdue|over[\s-]?due|late|expired)\b", re.I)),
+    ("firs",          re.compile(r"\bfirs?\b", re.I)),
+    ("sealed",        re.compile(r"\bseal(?:ed|ing)?\b", re.I)),
+    ("challans",      re.compile(r"\bch[ae]+l+a+n+s?\b", re.I)),
+    ("warnings",      re.compile(r"\bwarning(?:s)?\b", re.I)),
+    ("no_offenses",   re.compile(r"\bno[\s-]*offen[cs]es?\b", re.I)),
+    ("total_actions", re.compile(
+        r"\b(inspect(?:ions?)?|muayina|jaiz[ae]|total\s+actions?)\b", re.I)),
+]
+
+# Admin-level keyword → column to group by in the ranking query.
+_RANK_LEVEL_MAP = [
+    ("tehsil",   re.compile(r"\b(tehsils?|stations?)\b", re.I)),
+    ("district", re.compile(r"\bdistricts?\b", re.I)),
+    ("division", re.compile(r"\bdivisions?\b", re.I)),
+]
+
+
+_AMOUNT_QUALIFIER_RE = re.compile(
+    r"\b(amount|amounts|rupees?|rs\.?|pkr|monetary|value|fine\s+value|"
+    r"paisa|paise|kitn[ae]\s+paise|raqam|amount[\s-]?wise|by\s+amount)\b",
+    re.I,
+)
+
+
+def _detect_rank_intent(q: str) -> Optional[str]:
+    """Return e.g. 'insp_top:firs:tehsil:desc' or
+    'insp_top:paid_amount:tehsil:desc' or None.
+
+    Encoded format: insp_top:<metric>:<level>:<order>
+      metric — count metric (firs, sealed, challans, warnings,
+               no_offenses, total_actions, paid_challans,
+               unpaid_challans, overdue_challans) OR amount metric
+               (paid_amount, unpaid_amount, overdue_amount, fine_amount)
+      level  ∈ {tehsil, district, division}    (defaults tehsil)
+      order  ∈ {desc, asc}                     (asc for least/lowest)
+    """
+    if not _RANK_TRIGGER_RE.search(q):
+        return None
+    metric = None
+    for col, pat in _RANK_METRIC_MAP:
+        if pat.search(q):
+            metric = col
+            break
+    if not metric:
+        return None
+
+    # Amount-mode promotion: when an amount qualifier is present AND the
+    # detected metric is payment-related (paid/unpaid/overdue/challans),
+    # rank by the corresponding rupee total instead of the row count.
+    if _AMOUNT_QUALIFIER_RE.search(q):
+        amount_metric = {
+            "paid_challans": "paid_amount",
+            "unpaid_challans": "unpaid_amount",
+            "overdue_challans": "overdue_amount",
+            "challans": "fine_amount",
+        }.get(metric)
+        if amount_metric:
+            metric = amount_metric
+
+    level = "tehsil"  # default
+    for lvl, pat in _RANK_LEVEL_MAP:
+        if pat.search(q):
+            level = lvl
+            break
+    order = "asc" if _RANK_LEAST_RE.search(q) else "desc"
+    return f"insp_top:{metric}:{level}:{order}"
+
+
 _NAME_STOP_WORDS = frozenset({
     "what", "about", "the", "same", "dates", "date", "inspections", "inspection",
     "summary", "summery", "from", "tell", "show", "detailed", "detail", "details",
     "total", "how", "many", "give", "officer", "officers", "please", "also",
     "april", "may", "june", "july", "august", "september", "october", "november",
-    "december", "january", "february", "march", "with", "and", "for", "this",
+    "december", "january", "february", "march",
+    # Short month abbreviations — without these, "1st jan to 10 jan 2026"
+    # leaks "jan" into the candidate pool and pairs it with another token
+    # to false-match officers like "Muhammad Sher Jan Khan".
+    "jan", "feb", "mar", "apr", "jun", "jul", "aug", "sep", "sept", "oct", "nov", "dec",
+    # Common summary typos and ordinal/range words.
+    "summmery", "summmary", "summari", "summaries",
+    "till", "until", "between",
+    "with", "and", "for", "this",
     "that", "these", "those", "report", "data", "performance", "field",
     "regulatory", "checking", "checkings", "division", "district", "tehsil",
     "challan", "challans", "batao", "dikhao", "kitni", "kitny", "when",
@@ -343,7 +494,22 @@ def _detect_insp_officer_name(question: str) -> Optional[str]:
 # Date extraction (reuse challan_lookup's robust implementation)
 # ══════════════════════════════════════════════════════════════
 def _extract_date_range(question: str) -> Tuple[Optional[date], Optional[date]]:
-    """Extract date range from the question, reusing challan_lookup._extract_date_range."""
+    """Extract date range from the question.
+
+    Strategy (Phase-1 fix): try the canonical `pera_dates.parse_date_range`
+    first. Fall back to the legacy challan parser only when the canonical
+    parser returns None, so existing callers that depend on legacy formats
+    keep working.
+    """
+    try:
+        from pera_dates import parse_date_range
+        dr = parse_date_range(question)
+        if dr is not None:
+            return (dr.start, dr.end)
+    except Exception:
+        pass
+
+    # Legacy fallback for any pattern the canonical parser doesn't yet cover.
     try:
         from challan_lookup import _extract_date_range as _challan_dr
         result = _challan_dr(question)
@@ -379,12 +545,38 @@ def detect_inspection_intent(question: str) -> Optional[str]:
     if cnic_match:
         return f"insp_cnic:{cnic_match.group(1)}"
 
-    # Detect officer name first
-    officer_name = _detect_insp_officer_name(q)
+    # Officer detection runs LATER — first we want admin-level keywords
+    # (division/district/tehsil/station) and explicit location matches to
+    # win. Otherwise queries like "allama iqbal stations from..." get
+    # mis-routed to a real officer named "M Zafar Iqbal" because token
+    # 'iqbal' false-pairs in the officer LIKE search.
+    officer_name = None
 
-    # Must have inspection keyword (for non-CNIC queries)
+    # Must have inspection keyword (for non-CNIC queries) — with one
+    # fallback: if the user explicitly named an admin level
+    # (division/district/tehsil) AND a date range is present, treat the
+    # query as an inspection summary even when the inspection vocabulary
+    # is missing or misspelled. Higher-authority officials routinely
+    # ask "Lahore districts from 1 Jan to 10 Jan 2026" with no other
+    # cue — without this fallback such queries fall through to docs.
+    # Ranking shortcut — runs BEFORE the keyword gate because superlative
+    # + metric + level (e.g. "most challans tehsil") is a high-confidence
+    # inspection-ranking query even without the literal "inspection" word.
+    rank_intent = _detect_rank_intent(q)
+    if rank_intent:
+        return rank_intent
+
     if not _INSP_KEYWORDS.search(q):
-        return None
+        has_admin_word = re.search(r"\b(division|district|tehsil|station)s?\b", q, re.I)
+        has_date_range = False
+        try:
+            dr = _extract_date_range(q)
+            if dr and dr[0] and dr[1]:
+                has_date_range = True
+        except Exception:
+            pass
+        if not (has_admin_word and has_date_range):
+            return None
 
     # Repeat offender / frequent CNIC detection
     # "kis id card ka name again and again aya", "repeat offender", "baar baar",
@@ -402,11 +594,9 @@ def detect_inspection_intent(question: str) -> Optional[str]:
     if _REPEAT_RE.search(q):
         return "insp_repeat_offenders"
 
-    # Officer + inspection keyword → officer lookup
-    if officer_name:
-        return f"insp_officer:{officer_name}"
-
-    # Location detection
+    # Location detection runs BEFORE officer detection so admin-level
+    # queries don't get hijacked by greedy name-pair LIKE matches on
+    # tokens that happen to overlap with officer names.
     location = _detect_location(q)
     if location:
         level = location["level"]
@@ -416,6 +606,11 @@ def detect_inspection_intent(question: str) -> Optional[str]:
             return f"insp_district:{location['district_name']}"
         elif level == "tehsil":
             return f"insp_tehsil:{location['tehsil_name']}"
+
+    # Officer fallback — only when no location matched.
+    officer_name = _detect_insp_officer_name(q)
+    if officer_name:
+        return f"insp_officer:{officer_name}"
 
     return "insp_summary"
 
@@ -570,8 +765,329 @@ def execute_inspection_lookup(
         return _query_insp_cnic(db, cnic)
     elif base == "insp_repeat_offenders":
         return _query_repeat_offenders(db)
+    elif base == "insp_top":
+        # Format: insp_top:<metric>:<level>:<order>
+        metric = parts[1] if len(parts) > 1 else "firs"
+        level = parts[2] if len(parts) > 2 else "tehsil"
+        order = parts[3] if len(parts) > 3 else "desc"
+        return _query_top_locations(db, metric, level, order)
 
     return None
+
+
+def _query_top_by_amount(
+    db, status_filter: Optional[str], sum_col: str, level: str,
+    order: str = "desc", metric_name: str = "fine_amount",
+) -> Dict[str, Any]:
+    """Rank tehsils/districts/divisions by SUM(<sum_col>) from challan_data,
+    optionally filtered to a payment status.
+    """
+    direction = "ASC" if (order or "").lower() == "asc" else "DESC"
+    label_map = {
+        "paid_amount": "Paid Amount (Rs)",
+        "unpaid_amount": "Unpaid Outstanding (Rs)",
+        "overdue_amount": "Overdue Outstanding (Rs)",
+        "fine_amount": "Total Fine Imposed (Rs)",
+    }
+    metric_label = label_map.get(metric_name, "Amount (Rs)")
+    level_label = {"tehsil": "Tehsil",
+                   "district": "District",
+                   "division": "Division"}[level]
+
+    where_clause = ""
+    args: tuple = ()
+    if status_filter:
+        where_clause = "WHERE LOWER(challan_status) = %s"
+        args = (status_filter,)
+
+    if level == "tehsil":
+        rows = db.fetch_all(
+            f"SELECT tehsil_name AS loc_name, "
+            f"       COALESCE(SUM({sum_col}), 0) AS metric_value, "
+            f"       COUNT(*) AS challan_count "
+            f"FROM challan_data {where_clause} "
+            f"GROUP BY tehsil_name "
+            f"ORDER BY metric_value {direction} NULLS LAST "
+            f"LIMIT 25",
+            args,
+        )
+    elif level == "district":
+        rows = db.fetch_all(
+            f"SELECT district_name AS loc_name, "
+            f"       COALESCE(SUM({sum_col}), 0) AS metric_value, "
+            f"       COUNT(*) AS challan_count "
+            f"FROM challan_data {where_clause} "
+            f"GROUP BY district_name "
+            f"ORDER BY metric_value {direction} NULLS LAST "
+            f"LIMIT 25",
+            args,
+        )
+    else:  # division
+        rows = db.fetch_all(
+            f"SELECT division_name AS loc_name, "
+            f"       COALESCE(SUM({sum_col}), 0) AS metric_value, "
+            f"       COUNT(*) AS challan_count "
+            f"FROM challan_data {where_clause} "
+            f"GROUP BY division_name "
+            f"ORDER BY metric_value {direction} NULLS LAST "
+            f"LIMIT 25",
+            args,
+        )
+
+    if not rows:
+        return {
+            "source_id": f"insp_top:{metric_name}:{level}",
+            "records": [],
+            "formatted_context": (
+                f"No {metric_name} data available at {level} level.\n"
+            ),
+        }
+
+    sort_word = "Lowest" if direction == "ASC" else "Highest"
+    ctx = f"Ranking — {level_label}s by {metric_label} ({sort_word} first)\n"
+    ctx += "=" * 50 + "\n"
+    ctx += (
+        f"{'Rank':<5s}{level_label:<25s} {metric_label:>22s}  "
+        f"Challans\n"
+    )
+    for i, r in enumerate(rows, 1):
+        ctx += (
+            f"{i:<5d}{(r.get('loc_name') or '—'):<25s} "
+            f"Rs. {int(r.get('metric_value') or 0):>18,}  "
+            f"{int(r.get('challan_count') or 0):>8,}\n"
+        )
+    ctx += (
+        f"\n(Ranking computed from challan_data row-level SUM. "
+        f"Cumulative all-time totals; not date-range filtered.)\n"
+    )
+    return {
+        "source_id": f"insp_top:{metric_name}:{level}:{order}",
+        "records": rows,
+        "formatted_context": ctx,
+        # Production wiring: deterministic answer & evidence_type so
+        # answerer.py can bypass LLM rendering for numeric tables.
+        "deterministic_answer": ctx,
+        "structured_payload": ctx,
+        "evidence_type": "ranking",
+    }
+
+
+def _query_top_by_payment_status(
+    db, status: str, level: str, order: str = "desc",
+) -> Dict[str, Any]:
+    """Rank tehsils/districts/divisions by paid/unpaid/overdue challan
+    count using challan_tehsil_breakdown. Aggregates upward from tehsil
+    rows when the caller asks for district or division level.
+    """
+    direction = "ASC" if (order or "").lower() == "asc" else "DESC"
+    status_label = {
+        "paid": "Paid Challans",
+        "unpaid": "Unpaid Challans",
+        "overdue": "Overdue Challans",
+    }[status]
+    level_label = {"tehsil": "Tehsil",
+                   "district": "District",
+                   "division": "Division"}[level]
+
+    if level == "tehsil":
+        rows = db.fetch_all(
+            "SELECT tehsil_name AS loc_name, "
+            "       total_requisitions AS metric_value, "
+            "       hoarding_count, price_control_count, "
+            "       encroachment_count, land_retrieval_count, "
+            "       public_nuisance_count "
+            "FROM challan_tehsil_breakdown "
+            "WHERE status = %s AND tehsil_name IS NOT NULL "
+            f"ORDER BY total_requisitions {direction} NULLS LAST "
+            "LIMIT 25",
+            (status,),
+        )
+    elif level == "district":
+        rows = db.fetch_all(
+            "SELECT d.district_name AS loc_name, "
+            "       SUM(b.total_requisitions) AS metric_value, "
+            "       SUM(b.hoarding_count) AS hoarding_count, "
+            "       SUM(b.price_control_count) AS price_control_count, "
+            "       SUM(b.encroachment_count) AS encroachment_count, "
+            "       SUM(b.land_retrieval_count) AS land_retrieval_count, "
+            "       SUM(b.public_nuisance_count) AS public_nuisance_count "
+            "FROM challan_tehsil_breakdown b "
+            "JOIN dim_tehsil t ON b.tehsil_name = t.tehsil_name "
+            "JOIN dim_district d ON t.district_id = d.district_id "
+            "WHERE b.status = %s "
+            "GROUP BY d.district_name "
+            f"ORDER BY metric_value {direction} NULLS LAST "
+            "LIMIT 25",
+            (status,),
+        )
+    else:  # division
+        rows = db.fetch_all(
+            "SELECT dv.division_name AS loc_name, "
+            "       SUM(b.total_requisitions) AS metric_value, "
+            "       SUM(b.hoarding_count) AS hoarding_count, "
+            "       SUM(b.price_control_count) AS price_control_count, "
+            "       SUM(b.encroachment_count) AS encroachment_count, "
+            "       SUM(b.land_retrieval_count) AS land_retrieval_count, "
+            "       SUM(b.public_nuisance_count) AS public_nuisance_count "
+            "FROM challan_tehsil_breakdown b "
+            "JOIN dim_tehsil t ON b.tehsil_name = t.tehsil_name "
+            "JOIN dim_district d ON t.district_id = d.district_id "
+            "JOIN dim_division dv ON d.division_id = dv.division_id "
+            "WHERE b.status = %s "
+            "GROUP BY dv.division_name "
+            f"ORDER BY metric_value {direction} NULLS LAST "
+            "LIMIT 25",
+            (status,),
+        )
+
+    if not rows:
+        return {
+            "source_id": f"insp_top:{status}_challans:{level}",
+            "records": [],
+            "formatted_context": (
+                f"No {status} challan data available at {level} level.\n"
+            ),
+        }
+
+    sort_word = "Lowest" if direction == "ASC" else "Highest"
+    ctx = f"Ranking — {level_label}s by {status_label} ({sort_word} first)\n"
+    ctx += "=" * 50 + "\n"
+    ctx += (
+        f"{'Rank':<5s}{level_label:<25s} {status_label:>18s}  "
+        f"Hoard  Price  Encroach\n"
+    )
+    for i, r in enumerate(rows, 1):
+        ctx += (
+            f"{i:<5d}{(r.get('loc_name') or '—'):<25s} "
+            f"{int(r.get('metric_value') or 0):>18,}  "
+            f"{int(r.get('hoarding_count') or 0):>5,}  "
+            f"{int(r.get('price_control_count') or 0):>5,}  "
+            f"{int(r.get('encroachment_count') or 0):>8,}\n"
+        )
+    ctx += (
+        f"\n(Ranking computed from challan_tehsil_breakdown table — "
+        f"cumulative all-time totals for {status} challans, not date-range "
+        f"filtered. Hoard/Price/Encroach columns show requisition-type "
+        f"composition.)\n"
+    )
+    return {
+        "source_id": f"insp_top:{status}_challans:{level}:{order}",
+        "records": rows,
+        "formatted_context": ctx,
+        "deterministic_answer": ctx,
+        "structured_payload": ctx,
+        "evidence_type": "ranking",
+    }
+
+
+def _query_top_locations(
+    db, metric: str, level: str, order: str = "desc",
+) -> Dict[str, Any]:
+    """Rank tehsils/districts/divisions by a metric using the latest
+    snapshot in inspection_performance. Used for "which station has the
+    most FIRs" / "top 5 tehsils by sealed" / "sab sy ziada konsa stations
+    fir kr raha hy" type queries.
+    """
+    safe_metrics = {"firs", "sealed", "challans", "warnings",
+                    "no_offenses", "total_actions",
+                    "paid_challans", "unpaid_challans", "overdue_challans",
+                    "paid_amount", "unpaid_amount", "overdue_amount",
+                    "fine_amount"}
+    safe_levels = {"tehsil", "district", "division"}
+    if metric not in safe_metrics or level not in safe_levels:
+        return {
+            "source_id": f"insp_top:{metric}:{level}",
+            "records": [],
+            "formatted_context": (
+                f"Cannot rank by metric={metric!r} at level={level!r}.\n"
+            ),
+        }
+    direction = "ASC" if (order or "").lower() == "asc" else "DESC"
+
+    # Amount-based rankings (Rs totals) come from challan_data row-level
+    # aggregation — challan_tehsil_breakdown only stores counts.
+    amount_metric_status = {
+        "paid_amount": ("paid", "paid_amount"),
+        "unpaid_amount": ("unpaid", "outstanding_amount"),
+        "overdue_amount": ("overdue", "outstanding_amount"),
+        "fine_amount": (None, "fine_amount"),
+    }.get(metric)
+    if amount_metric_status:
+        status_filter, sum_col = amount_metric_status
+        return _query_top_by_amount(db, status_filter, sum_col, level,
+                                    order, metric)
+
+    # Count-based payment rankings → challan_tehsil_breakdown.
+    payment_metric = {
+        "paid_challans": "paid",
+        "unpaid_challans": "unpaid",
+        "overdue_challans": "overdue",
+    }.get(metric)
+    if payment_metric:
+        return _query_top_by_payment_status(db, payment_metric, level, order)
+
+    name_col = f"{level}_name"
+    rows = db.fetch_all(
+        f"SELECT {name_col} AS loc_name, {metric} AS metric_value, "
+        f"       total_actions, challans, firs, warnings, sealed, "
+        f"       snapshot_date "
+        f"FROM inspection_performance "
+        f"WHERE level = %s AND snapshot_date = ("
+        f"  SELECT MAX(snapshot_date) FROM inspection_performance WHERE level = %s"
+        f") AND {name_col} IS NOT NULL "
+        f"ORDER BY {metric} {direction} NULLS LAST "
+        f"LIMIT 25",
+        (level, level),
+    )
+    if not rows:
+        return {
+            "source_id": f"insp_top:{metric}:{level}",
+            "records": [],
+            "formatted_context": (
+                f"No rows in inspection_performance at level={level} to rank.\n"
+            ),
+        }
+
+    metric_label = {
+        "firs": "FIRs",
+        "sealed": "Sealed Premises",
+        "challans": "Challans",
+        "warnings": "Warnings",
+        "no_offenses": "No-Offense Cases",
+        "total_actions": "Total Inspections/Actions",
+    }[metric]
+    level_label = {"tehsil": "Tehsil", "district": "District", "division": "Division"}[level]
+
+    snap = rows[0].get("snapshot_date")
+    sort_word = "Lowest" if direction == "ASC" else "Highest"
+    ctx = f"Ranking — {level_label}s by {metric_label} ({sort_word} first)\n"
+    if snap:
+        ctx += f"Snapshot date: {snap}\n"
+    ctx += "=" * 50 + "\n"
+    ctx += f"{'Rank':<5s}{level_label:<25s} {metric_label:>15s}  Insp  Chal  FIR  Seal  Warn\n"
+    for i, r in enumerate(rows, 1):
+        ctx += (
+            f"{i:<5d}{(r.get('loc_name') or '—'):<25s} "
+            f"{int(r.get('metric_value') or 0):>15,}  "
+            f"{int(r.get('total_actions') or 0):>4,}  "
+            f"{int(r.get('challans') or 0):>4,}  "
+            f"{int(r.get('firs') or 0):>3,}  "
+            f"{int(r.get('sealed') or 0):>4,}  "
+            f"{int(r.get('warnings') or 0):>4,}\n"
+        )
+    ctx += (
+        f"\n(Ranking computed from latest stored snapshot of "
+        f"inspection_performance. Cumulative all-time totals; not "
+        f"date-range filtered.)\n"
+    )
+    return {
+        "source_id": f"insp_top:{metric}:{level}:{order}",
+        "records": rows,
+        "formatted_context": ctx,
+        "deterministic_answer": ctx,
+        "structured_payload": ctx,
+        "evidence_type": "ranking",
+    }
 
 
 # ── Summary query (all divisions) ────────────────────────────
@@ -665,9 +1181,18 @@ def _query_insp_location(
     col = f"{level}_name"
     source_id = f"insp_{level}:{name}"
 
-    # ── Tehsil + date range → LIVE SDEO API CALL ──
-    if level == "tehsil" and start_date and end_date:
-        return _query_tehsil_live(db, name, start_date, end_date, source_id)
+    # ── Date-ranged → LIVE SDEO API CALL ──
+    # SDEO summary/KPI endpoints accept tehsilId only. For district and
+    # division queries with a date filter we fan out to every tehsil in
+    # the hierarchy and aggregate the responses, since the SDEO backend
+    # has no district/division-level date-range endpoints.
+    if start_date and end_date:
+        if level == "tehsil":
+            return _query_tehsil_live(db, name, start_date, end_date, source_id)
+        if level == "district":
+            return _query_district_live(db, name, start_date, end_date, source_id)
+        if level == "division":
+            return _query_division_live(db, name, start_date, end_date, source_id)
 
     # Get the location's own summary row
     parent_rows = db.fetch_all(
@@ -843,9 +1368,10 @@ def _query_tehsil_live(
 
     tehsil_id = rows[0]["tehsil_id"]
 
-    # SDEO API treats endDate as exclusive — to include the full end day,
-    # we add 1 day (e.g. "Jan 1 to Jan 30" → API endDate = Jan 31)
-    api_end_date = end_date + timedelta(days=1)
+    # endDate passed verbatim — see _fetch_tehsil_metrics for the
+    # rationale (we mirror the SDEO UI's date-picker convention so
+    # chatbot totals match what the user reads off the dashboard).
+    api_end_date = end_date
 
     try:
         resp = requests.get(
@@ -1003,6 +1529,308 @@ def _query_tehsil_live(
         "source_id": source_id,
         "records": [data],
         "formatted_context": context,
+    }
+
+
+# ══════════════════════════════════════════════════════════════
+# Live tehsil-fan-out aggregation for district / division
+# ══════════════════════════════════════════════════════════════
+def _fetch_tehsil_metrics(
+    tehsil_id: int, tehsil_name: str,
+    start_date: date, end_date: date,
+) -> Dict[str, Any]:
+    """Hit the four SDEO endpoints for one tehsil and return a flat dict.
+
+    SDEO API treats endDate as exclusive — caller passes the user-requested
+    end_date and we add a day before sending. Network failures surface as
+    `error` so the aggregator can decide whether to keep going or abort.
+    """
+    # SDEO endDate is exclusive at midnight: passing 2026-01-10 returns
+    # data through Jan 9 23:59:59. The dashboard's date-picker matches
+    # user-typed dates verbatim (e.g. "To 01/10/2026 12:00 AM"), so we
+    # mirror that — no +1-day shift — to keep chatbot totals identical
+    # to what the user reads from the SDEO UI.
+    api_end_date = end_date
+    params = {
+        "tehsilId": tehsil_id,
+        "startDate": start_date.isoformat(),
+        "endDate": api_end_date.isoformat(),
+    }
+    out: Dict[str, Any] = {
+        "tehsil_id": tehsil_id,
+        "tehsil_name": tehsil_name,
+        "total_actions": 0, "challans": 0, "firs": 0, "warnings": 0,
+        "no_offenses": 0, "sealed": 0, "removal_order": 0, "epo": 0,
+        "officers": [],
+        "fine_imposed": 0.0, "fine_recovered": 0.0, "unpaid_fine": 0.0,
+        "paid_count": 0, "unpaid_count": 0,
+        "arrest_total": 0, "pcm_total": 0,
+        "error": None,
+    }
+    try:
+        d = requests.get(SDEO_INSPECTIONS_SUMMARY, params=params,
+                         headers=_HEADERS, timeout=_API_TIMEOUT).json()
+        if isinstance(d, dict):
+            out["total_actions"] = int(d.get("totalActions") or 0)
+            out["challans"] = int(d.get("challans") or 0)
+            out["firs"] = int(d.get("fiRs") or 0)
+            out["warnings"] = int(d.get("warnings") or 0)
+            out["no_offenses"] = int(d.get("noOffenses") or 0)
+            out["sealed"] = int(d.get("sealed") or 0)
+            out["removal_order"] = int(d.get("removalOrder") or 0)
+            out["epo"] = int(d.get("epo") or 0)
+            out["officers"] = d.get("officers") or []
+    except Exception as e:
+        out["error"] = f"summary:{e}"
+
+    try:
+        k = requests.get(SDEO_TOP_KPIS, params=params,
+                         headers=_HEADERS, timeout=_API_TIMEOUT).json()
+        if isinstance(k, dict):
+            out["fine_imposed"] = float(k.get("totalFineImposed") or 0)
+            out["fine_recovered"] = float(k.get("totalFineRecovered") or 0)
+            out["unpaid_fine"] = float(k.get("unpaidFineAmount") or 0)
+    except Exception as e:
+        out["error"] = (out["error"] or "") + f" kpi:{e}"
+
+    try:
+        cs = requests.get(SDEO_CHALLAN_STATUS_BREAKDOWN, params=params,
+                          headers=_HEADERS, timeout=_API_TIMEOUT).json()
+        if isinstance(cs, dict):
+            out["paid_count"] = int(cs.get("paidCount") or 0)
+            out["unpaid_count"] = int(cs.get("unpaidCount") or 0)
+    except Exception as e:
+        out["error"] = (out["error"] or "") + f" cs:{e}"
+
+    # PCM totals are all-time, not date-filtered. Skip params.
+    try:
+        pdc = requests.get(PCM_DASHBOARD_COUNTS,
+                           params={"tehsilId": tehsil_id},
+                           headers=_HEADERS, timeout=_API_TIMEOUT).json()
+        if isinstance(pdc, dict):
+            out["arrest_total"] = int(pdc.get("totalArrest") or 0)
+            out["pcm_total"] = int(pdc.get("totalPCM") or 0)
+    except Exception as e:
+        out["error"] = (out["error"] or "") + f" pcm:{e}"
+
+    return out
+
+
+def _aggregate_tehsil_metrics(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Sum tehsil-level metrics into a single roll-up. Officer rows with the
+    same officerName collapse into one record with summed counts so the
+    output looks like a unified district/division-level breakdown.
+    """
+    agg = {
+        "total_actions": 0, "challans": 0, "firs": 0, "warnings": 0,
+        "no_offenses": 0, "sealed": 0, "removal_order": 0, "epo": 0,
+        "fine_imposed": 0.0, "fine_recovered": 0.0, "unpaid_fine": 0.0,
+        "paid_count": 0, "unpaid_count": 0,
+        "arrest_total": 0, "pcm_total": 0,
+        "tehsils_covered": 0, "tehsils_failed": 0,
+        "tehsils_with_data": [],
+    }
+    officer_acc: Dict[str, Dict[str, int]] = {}
+    for r in rows:
+        if r.get("error"):
+            agg["tehsils_failed"] += 1
+            continue
+        agg["tehsils_covered"] += 1
+        for k in ("total_actions", "challans", "firs", "warnings",
+                  "no_offenses", "sealed", "removal_order", "epo",
+                  "paid_count", "unpaid_count",
+                  "arrest_total", "pcm_total"):
+            agg[k] += int(r.get(k) or 0)
+        for k in ("fine_imposed", "fine_recovered", "unpaid_fine"):
+            agg[k] += float(r.get(k) or 0)
+        if (r.get("total_actions") or 0) > 0:
+            agg["tehsils_with_data"].append(r["tehsil_name"])
+        for o in (r.get("officers") or []):
+            name = (o.get("officerName") or "Unknown").strip()
+            slot = officer_acc.setdefault(name, {
+                "officerName": name, "inspection": 0, "challan": 0,
+                "fir": 0, "warning": 0, "noOffense": 0, "sealed": 0,
+                "removalOrder": 0, "epo": 0,
+            })
+            for k in ("inspection", "challan", "fir", "warning",
+                     "noOffense", "sealed", "removalOrder", "epo"):
+                slot[k] += int(o.get(k) or 0)
+    agg["officers"] = sorted(officer_acc.values(),
+                             key=lambda x: -x["inspection"])
+    # Stash raw rows so the formatter can render an audit trail without
+    # re-fetching. Prefixed with `_` to signal "internal".
+    agg["_rows"] = rows
+    return agg
+
+
+def _format_aggregate_context(
+    level: str, name: str, agg: Dict[str, Any],
+    start_date: date, end_date: date,
+    tehsil_count: int,
+) -> str:
+    ctx = f"Inspection Performance — {level.title()}: {name}\n"
+    ctx += f"Date Range: {start_date} to {end_date}\n"
+    ctx += f"Aggregation: sum of {agg['tehsils_covered']}/{tehsil_count} tehsils"
+    if agg["tehsils_failed"]:
+        ctx += f" ({agg['tehsils_failed']} tehsils errored)"
+    ctx += "\n" + "=" * 50 + "\n"
+
+    # Audit-trail FIRST so the LLM can't drop it during summarisation.
+    # Higher-authority users repeatedly cross-check chatbot totals against
+    # dashboard tiles per tehsil — without this table they have no way to
+    # spot which tehsil disagrees.
+    per_tehsil = sorted(
+        list(agg.get("_rows", []) or []),
+        key=lambda r: -(r.get("total_actions") or 0),
+    )
+    if per_tehsil:
+        ctx += "Per-Tehsil Breakdown (REQUIRED in answer):\n"
+        ctx += f"{'Tehsil':<25s} {'Insp':>6s} {'Chal':>5s} {'War':>4s} {'Sld':>3s} {'Fine(Rs)':>10s}\n"
+        for r in per_tehsil:
+            tag = " [ERR]" if r.get("error") else ""
+            ctx += (
+                f"{r['tehsil_name']:<25s} "
+                f"{r['total_actions']:>6,} "
+                f"{r['challans']:>5,} "
+                f"{r['warnings']:>4,} "
+                f"{r['sealed']:>3,} "
+                f"{int(r['fine_imposed']):>10,}{tag}\n"
+            )
+        ctx += "-" * 50 + "\n"
+
+    ctx += f"Total Inspections/Actions: {agg['total_actions']:,}\n"
+    ctx += f"Challans: {agg['challans']:,}\n"
+    ctx += f"FIRs: {agg['firs']:,}\n"
+    ctx += f"Warnings: {agg['warnings']:,}\n"
+    ctx += f"No Offenses: {agg['no_offenses']:,}\n"
+    ctx += f"Sealed: {agg['sealed']:,}\n"
+    if agg["removal_order"]:
+        ctx += f"Removal Orders: {agg['removal_order']:,}\n"
+    if agg["epo"]:
+        ctx += f"EPO: {agg['epo']:,}\n"
+
+    ctx += f"Fine Amount (imposed): Rs. {int(agg['fine_imposed']):,}\n"
+    ctx += f"Fine Recovered (paid): Rs. {int(agg['fine_recovered']):,}\n"
+    ctx += f"Fine Outstanding (unpaid): Rs. {int(agg['unpaid_fine']):,}\n"
+    ctx += f"Paid Challans: {agg['paid_count']:,}\n"
+    ctx += f"Unpaid Challans: {agg['unpaid_count']:,}\n"
+    ctx += f"Arrest Cases (all-time): {agg['arrest_total']:,}\n"
+    ctx += f"PCM (all-time): {agg['pcm_total']:,}\n"
+
+    if agg["officers"]:
+        ctx += f"\nOfficer Breakdown ({len(agg['officers'])} officers, summed across tehsils):\n"
+        for o in agg["officers"][:25]:
+            parts = [
+                f"{o['inspection']:,} inspections",
+                f"{o['challan']:,} challans",
+                f"{o['warning']:,} warnings",
+            ]
+            if o["fir"]:
+                parts.append(f"{o['fir']} FIRs")
+            if o["sealed"]:
+                parts.append(f"{o['sealed']} sealed")
+            if o["removalOrder"]:
+                parts.append(f"{o['removalOrder']} removal orders")
+            if o["epo"]:
+                parts.append(f"{o['epo']} EPOs")
+            ctx += f"  {o['officerName']}: {', '.join(parts)}\n"
+
+
+    ctx += (
+        "\n(Counts and fines aggregated live from per-tehsil SDEO endpoints "
+        "for the requested date range. Arrest and PCM totals are all-time "
+        "figures from the PCM dashboard endpoint.)\n"
+    )
+    return ctx
+
+
+def _query_district_live(
+    db, district_name: str, start_date: date, end_date: date, source_id: str,
+) -> Dict[str, Any]:
+    """Aggregate inspection metrics for a district by fanning out to tehsils."""
+    tehsils = db.fetch_all(
+        "SELECT t.tehsil_id, t.tehsil_name FROM dim_tehsil t "
+        "JOIN dim_district d ON t.district_id = d.district_id "
+        "WHERE d.district_name = %s AND COALESCE(t.is_active, true) = true",
+        (district_name,),
+    )
+    if not tehsils:
+        return {
+            "source_id": source_id,
+            "records": [],
+            "formatted_context": (
+                f"District '{district_name}' has no tehsils registered in the "
+                "hierarchy table.\n"
+            ),
+        }
+    return _fanout_aggregate("district", district_name, tehsils,
+                             start_date, end_date, source_id)
+
+
+def _query_division_live(
+    db, division_name: str, start_date: date, end_date: date, source_id: str,
+) -> Dict[str, Any]:
+    """Aggregate inspection metrics for a division (all tehsils under it)."""
+    tehsils = db.fetch_all(
+        "SELECT t.tehsil_id, t.tehsil_name FROM dim_tehsil t "
+        "JOIN dim_district d ON t.district_id = d.district_id "
+        "JOIN dim_division dv ON d.division_id = dv.division_id "
+        "WHERE dv.division_name = %s AND COALESCE(t.is_active, true) = true",
+        (division_name,),
+    )
+    if not tehsils:
+        return {
+            "source_id": source_id,
+            "records": [],
+            "formatted_context": (
+                f"Division '{division_name}' has no tehsils registered in the "
+                "hierarchy table.\n"
+            ),
+        }
+    return _fanout_aggregate("division", division_name, tehsils,
+                             start_date, end_date, source_id)
+
+
+def _fanout_aggregate(
+    level: str, name: str, tehsils: List[Dict[str, Any]],
+    start_date: date, end_date: date, source_id: str,
+) -> Dict[str, Any]:
+    """Parallel-fetch per-tehsil metrics, aggregate, and format context."""
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    rows: List[Dict[str, Any]] = []
+    # Cap concurrency so we don't hammer the upstream API.
+    workers = min(8, len(tehsils))
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        futs = [
+            ex.submit(_fetch_tehsil_metrics,
+                      t["tehsil_id"], t["tehsil_name"],
+                      start_date, end_date)
+            for t in tehsils if t.get("tehsil_id")
+        ]
+        for f in as_completed(futs):
+            try:
+                rows.append(f.result())
+            except Exception as e:
+                log.warning("Tehsil metric fetch raised: %s", e)
+    agg = _aggregate_tehsil_metrics(rows)
+    ctx = _format_aggregate_context(level, name, agg,
+                                    start_date, end_date, len(tehsils))
+    try:
+        from freshness_helper import format_freshness_footer
+        ctx += format_freshness_footer(
+            "SDEO Inspections API",
+            snapshot_date=datetime.now(),
+            source_label="SDEO Live API (aggregated)",
+        ) + "\n"
+    except Exception:
+        pass
+    return {
+        "source_id": source_id,
+        "records": rows,
+        "formatted_context": ctx,
+        "deterministic_answer": ctx,
+        "structured_payload": ctx,
+        "evidence_type": "aggregate",
     }
 
 

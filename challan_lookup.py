@@ -257,11 +257,26 @@ def _find_location_in_question(question: str) -> Optional[Tuple[str, str]]:
     Returns (type, exact_db_name) or None.
 
     Steps:
+      0. pera_entities alias resolver (D.G. Khan / DG Khan / Dera Ghazi
+         Khan and other curated aliases) — production wiring.
       1. Strip prefixes like "tehsil", "district" from the search text
       2. Try exact match (longest first)
       3. Try normalized-spelling match (longest first)
       4. When a name hits multiple levels, use _pick_best_level
     """
+    # Step 0 — alias resolver (catches dotted division names BEFORE the
+    # substring matcher walks the cache). Skip when the user explicitly
+    # asked for district/tehsil so we don't promote to division wrongly.
+    if not re.search(r"\b(district|tehsil[s]?|station[s]?)\b",
+                     (question or "").lower()):
+        try:
+            from pera_entities import canonical_division_name
+            canon_div = canonical_division_name(question)
+            if canon_div:
+                return ("division", canon_div)
+        except Exception:
+            pass
+
     locations = _load_locations()
     if not locations:
         return None
@@ -531,7 +546,20 @@ def _extract_date_range(question: str) -> Optional[Tuple[date, date]]:
     """
     Extract a date range from the question.
     Returns (start_date, end_date) or None.
+
+    Production-wiring fix: try the canonical pera_dates parser first,
+    fall back to legacy patterns only when the canonical parser returns
+    None. Keeps backward compatibility while progressively migrating to
+    one source of truth.
     """
+    try:
+        from pera_dates import parse_date_range
+        dr = parse_date_range(question)
+        if dr is not None:
+            return (dr.start, dr.end)
+    except Exception:
+        pass
+
     today = date.today()
 
     # 1. Check for relative date patterns first
@@ -700,7 +728,7 @@ def _strip_dates_from_question(q: str) -> str:
 # ── Intent Detection ─────────────────────────────────────────
 
 _CHALLAN_PATTERNS = [
-    re.compile(r"\bch[ae]+l+a+ns?\b", re.I),
+    re.compile(r"\bch[ae]+l+a+n+s?\b", re.I),
     re.compile(r"\b(?:fine|fines|penalty|penalties)\b", re.I),
     re.compile(r"\b(?:violation|violations|offence|offenses)\b", re.I),
     re.compile(r"\b(?:enforcement\s+action|enforcement\s+data)\b", re.I),

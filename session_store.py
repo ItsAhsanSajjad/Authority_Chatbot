@@ -56,6 +56,11 @@ class SessionState:
     last_lookup_type: str = ""  # most recent stored-API lookup type (e.g. challan_daterange:...)
     last_doc_names: List[str] = field(default_factory=list)
     last_evidence_ids: List[str] = field(default_factory=list)
+    # Phase-4 structured follow-up state. JSON-serialised LastTurn
+    # (see structured_state.LastTurn). None when the last turn was a
+    # plain document RAG query. Kept as Dict so older sessions without
+    # the field deserialise cleanly.
+    structured_last_turn: Optional[Dict[str, Any]] = None
     created_at: float = field(default_factory=time.time)
     last_active: float = field(default_factory=time.time)
 
@@ -97,13 +102,16 @@ class SessionState:
             "last_lookup_type": self.last_lookup_type,
             "last_doc_names": self.last_doc_names,
             "last_evidence_ids": self.last_evidence_ids,
+            "structured_last_turn": self.structured_last_turn,
             "created_at": self.created_at,
             "last_active": self.last_active,
         }
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "SessionState":
-        """Deserialize from dict."""
+        """Deserialize from dict. Older sessions without
+        `structured_last_turn` deserialise cleanly with the field set
+        to None."""
         turns = [SessionTurn(**t) for t in data.get("turns", [])]
         return cls(
             session_id=data.get("session_id", ""),
@@ -112,6 +120,7 @@ class SessionState:
             last_lookup_type=data.get("last_lookup_type", ""),
             last_doc_names=data.get("last_doc_names", []),
             last_evidence_ids=data.get("last_evidence_ids", []),
+            structured_last_turn=data.get("structured_last_turn"),
             created_at=data.get("created_at", time.time()),
             last_active=data.get("last_active", time.time()),
         )

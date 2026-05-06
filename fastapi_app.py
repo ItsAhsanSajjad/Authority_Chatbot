@@ -911,16 +911,56 @@ def simple_ask(request: Request, body: SimpleChatRequest):
 
         # ── Direct intent detection (if no follow-up matched) ─────
         if not lookup_type:
+            # ── Structured follow-up merge (Task 1) ──
+            # If the previous turn was a structured lookup, try merging
+            # the current question into the prior LastTurn before running
+            # detectors. Catches "and by challans?" / "and unpaid?" /
+            # "ascending order" / "what about Faisalabad?" patterns.
+            try:
+                from structured_state import (
+                    LastTurn, merge_followup, last_turn_to_intent,
+                )
+                if session.structured_last_turn:
+                    prev_lt = LastTurn.from_dict(session.structured_last_turn)
+                    merged = merge_followup(question, prev_lt)
+                    merged_intent = last_turn_to_intent(merged)
+                    # Only treat as a follow-up when the merged intent
+                    # actually changed something meaningful or when the
+                    # question is short (≤6 words). This avoids hijacking
+                    # standalone fresh queries.
+                    qwords = len(question.split())
+                    if merged_intent and (
+                        qwords <= 6
+                        or merged.metric != prev_lt.metric
+                        or merged.status_filter != prev_lt.status_filter
+                        or merged.rank_order != prev_lt.rank_order
+                    ):
+                        lookup_type = merged_intent
+                        log.info(
+                            "Structured follow-up merged: '%s' (prev=%s, "
+                            "merged=%s)",
+                            question[:60], prev_lt.intent, merged_intent,
+                        )
+            except Exception as _e:
+                log.warning("Structured follow-up merge failed: %s", _e)
+
+        if not lookup_type:
+            # Pass last-turn domain so the dispatcher can break ties
+            # toward the previous turn's domain on follow-ups.
+            _last_domain = ""
+            if session.structured_last_turn:
+                _last_domain = (session.structured_last_turn or {}).get(
+                    "domain", "") or ""
             # Check original question FIRST — the LLM rewrite can inject
             # keywords (e.g. adding "challans" to a pure requisition
             # question) which would cause false cross-domain routing.
-            lookup_type = detect_lookup_intent(question)
+            lookup_type = detect_lookup_intent(question, _last_domain)
             if not lookup_type:
                 # Fallback: check rewritten query (may have resolved dates/context)
-                lookup_type = detect_lookup_intent(query_for_retrieval)
+                lookup_type = detect_lookup_intent(query_for_retrieval, _last_domain)
             # For structured queries in "both" mode, also try lookup detection
             if not lookup_type and query_class == QueryType.STRUCTURED:
-                lookup_type = detect_lookup_intent(question)
+                lookup_type = detect_lookup_intent(question, _last_domain)
 
     if lookup_type:
         # Pass both original and rewritten question — rewritten may have
@@ -1024,6 +1064,28 @@ def simple_ask(request: Request, body: SimpleChatRequest):
     # ── 7. Update session state ───────────────────────────────
     if lookup_type:
         session.last_lookup_type = lookup_type
+        # Phase-4: update structured_last_turn so follow-up queries can
+        # inherit metric/entity/date_range/order without re-stating.
+        try:
+            from structured_state import (
+                LastTurn, parse_intent_to_last_turn,
+            )
+            existing = (
+                LastTurn.from_dict(session.structured_last_turn)
+                if session.structured_last_turn else None
+            )
+            try:
+                from inspection_lookup import _extract_date_range as _idr
+                ds, de = _idr(query_for_retrieval)
+            except Exception:
+                ds = de = None
+            new_lt = parse_intent_to_last_turn(
+                lookup_type, question=query_for_retrieval,
+                existing=existing, date_start=ds, date_end=de,
+            )
+            session.structured_last_turn = new_lt.to_dict()
+        except Exception as _e:  # pragma: no cover — diagnostic field only
+            log.warning("structured_last_turn update failed: %s", _e)
     session.add_turn(SessionTurn(
         question=question,
         normalized_query=query_for_retrieval,

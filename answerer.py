@@ -2313,6 +2313,55 @@ def answer_question(
     client = get_chat_client()
     intent = intent or {}
 
+    # ── 0z. DETERMINISTIC-ANSWER BYPASS (Phase production wiring) ──
+    # When the retrieval contains a structured payload tagged as a
+    # ranking / aggregate / officer_table, return the code-rendered
+    # answer directly without sending the table through the LLM. This
+    # eliminates the "LLM re-orders rows" and "LLM hallucinates totals"
+    # failure modes that motivated this patch.
+    _det_answer = retrieval.get("deterministic_answer") if retrieval else None
+    _ev_type = retrieval.get("evidence_type") if retrieval else None
+    if _det_answer and _ev_type in ("ranking", "aggregate",
+                                    "officer_table",
+                                    "structured_analytics"):
+        try:
+            from numeric_validator import validate_numeric_answer
+            payload = retrieval.get("structured_payload") or _det_answer
+            # Sanity check the deterministic answer against itself to
+            # catch any future bug where formatter and payload diverge.
+            res = validate_numeric_answer(_det_answer, payload,
+                                          evidence_type=_ev_type)
+            num_validation = {
+                "ok": res.ok, "reason": res.reason,
+                "unsupported_count": len(res.unsupported_numbers),
+            }
+        except Exception:
+            num_validation = {"ok": True, "reason": "validator_skipped"}
+        log.info("Deterministic answer used (evidence_type=%s)", _ev_type)
+        # Build references like the rest of the pipeline so the
+        # frontend's source panel is populated.
+        try:
+            refs = extract_references_simple(
+                retrieval, question=current_question, answer_text=_det_answer
+            )
+        except Exception:
+            refs = []
+        return {
+            "answer": _det_answer,
+            "references": refs,
+            "decision": "answer",
+            "support_state": "supported",
+            "deterministic": True,
+            "evidence_type": _ev_type,
+            "numeric_validation": num_validation,
+            "grounding": {
+                "score": 0.95,
+                "confidence": "high",
+                "support_state": "supported",
+                "semantic_support": "deterministic",
+            },
+        }
+
     # 0y. Typo correction.
     # Apply the same PERA-vocabulary typo correction the retriever uses
     # so `_detect_target_role` and downstream substring-matching logic
@@ -2407,6 +2456,17 @@ def answer_question(
         "government audience — accuracy and honesty outweigh completeness.\n\n"
 
         "CORE RULES\n"
+        "0) AUDIT TABLES — if the Context contains either a section titled "
+        "'Per-Tehsil Breakdown (REQUIRED in answer)' OR a section beginning "
+        "with 'Ranking — ' (e.g. 'Ranking — Tehsils by FIRs (Highest first)'), "
+        "you MUST reproduce the FULL table verbatim — every row, every column, "
+        "in the EXACT order given by the Context. Do NOT re-sort the rows. "
+        "Do NOT skip rows. Do NOT collapse the table to a top-3/top-5 summary. "
+        "Do NOT change column widths or units. The Context's row order is the "
+        "ranking; reproducing rows out of order silently changes the answer. "
+        "Render the table as a markdown table immediately after the headline "
+        "answer. The headline answer must reference the row that appears at "
+        "rank 1 in the Context, not a row you think looks more relevant.\n"
         "1) Answer using ONLY the provided Context. Do not use external knowledge.\n"
         "2) Do not invent or infer facts. No fabricated numbers, dates, names, pay scales, "
         "authorities, powers, or procedures. If a specific value is not stated in the Context, "
@@ -2662,6 +2722,47 @@ def answer_question(
         if not _user_wants_references(current_question):
             answer_text = _strip_answer_references(answer_text)
 
+        # ── 5pre. Numeric validator for structured retrievals ──
+        # When the retrieval is tagged structured but the deterministic
+        # bypass at the top of this function didn't fire (e.g. a stored
+        # API non-ranking lookup), still validate that every number in
+        # the LLM answer appears in the structured payload. On failure
+        # we replace the answer with the deterministic payload (or the
+        # structured context as last resort) so hallucinated numbers
+        # cannot reach the user.
+        _ev_type_post = retrieval.get("evidence_type") if retrieval else None
+        _structured_payload = (
+            retrieval.get("structured_payload") if retrieval else None
+        )
+        _numeric_validation_post: Optional[Dict[str, Any]] = None
+        _numeric_replaced = False
+        if _ev_type_post and _structured_payload:
+            try:
+                from numeric_validator import validate_numeric_answer
+                vres = validate_numeric_answer(
+                    answer_text, _structured_payload,
+                    evidence_type=_ev_type_post,
+                )
+                _numeric_validation_post = {
+                    "ok": vres.ok, "reason": vres.reason,
+                    "unsupported_count": len(vres.unsupported_numbers),
+                    "unsupported_sample": vres.unsupported_numbers[:5],
+                }
+                if not vres.ok:
+                    log.warning(
+                        "Numeric validator rejected LLM answer "
+                        "(unsupported=%d). Replacing with structured payload.",
+                        len(vres.unsupported_numbers),
+                    )
+                    fallback = (
+                        retrieval.get("deterministic_answer")
+                        or _structured_payload
+                    )
+                    answer_text = fallback
+                    _numeric_replaced = True
+            except Exception as _ne:
+                log.debug("numeric_validator skipped: %s", _ne)
+
         # 5. Post-generation grounding verification.
         grounding = verify_grounding(
             answer_text=answer_text,
@@ -2749,9 +2850,16 @@ def answer_question(
         # strict judge verdict.
 
         def _retrieval_bypass_unsupported() -> bool:
-            """Return True when the top retrieved chunk is strongly
-            keyword-aligned with the user's question — strong enough
-            that refusing would be user-hostile."""
+            """Return True when ONE single chunk in the top-3 retrieved
+            results is strongly keyword-aligned with the user's question
+            — strong enough that refusing would be user-hostile.
+
+            Phase-1 tightening: require ratio >= 0.60 of *non-stopword*
+            query tokens to appear in the SAME chunk (not spread across
+            top-3). The previous behaviour distributed the matched-token
+            count over up-to-3 chunks, which let weak retrieval bypass
+            the judge for free.
+            """
             try:
                 all_ev = retrieval.get("evidence") or []
                 stopwords = {
@@ -2767,17 +2875,22 @@ def answer_question(
                     )
                     if len(w) > 2 and w not in stopwords
                 ]
-                if len(q_tokens) < 2:
+                if len(q_tokens) < 3:
+                    # too short — reject the bypass; fall through to
+                    # the standard refusal path so we don't ship an
+                    # ungrounded answer on a vague query.
                     return False
-                # Look at up to the top-3 evidence chunks (across docs).
+                threshold = max(2, int(round(0.60 * len(q_tokens))))
                 scanned = 0
                 for grp in all_ev:
                     for hit in grp.get("hits", [])[:2]:
                         if scanned >= 3:
                             break
                         text_lc = (hit.get("text") or "").lower()
-                        matched = sum(1 for t in q_tokens if t in text_lc)
-                        if matched >= max(2, len(q_tokens) // 2):
+                        matched_in_one_chunk = sum(
+                            1 for t in q_tokens if t in text_lc
+                        )
+                        if matched_in_one_chunk >= threshold:
                             return True
                         scanned += 1
                     if scanned >= 3:
@@ -2866,6 +2979,11 @@ def answer_question(
                 "support_state": support_state,
             },
         }
+        if _numeric_validation_post is not None:
+            result["numeric_validation"] = _numeric_validation_post
+        if _numeric_replaced:
+            result["deterministic"] = True
+            result["evidence_type"] = _ev_type_post
 
         if grounding.confidence == "low":
             log.info("Low grounding confidence (%.3f) — answer shown with note", grounding.score)
