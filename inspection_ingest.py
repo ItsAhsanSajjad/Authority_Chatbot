@@ -304,26 +304,46 @@ def fetch_officer_inspections(
 
 
 # ── Transform ─────────────────────────────────────────────────
+_KNOWN_SUMMARY_KEYS = {
+    "divisionId", "divisionName", "districtId", "districtName",
+    "tehsilId", "tehsilName", "tehsilNameEnglish",
+    "totalActions", "challans", "fiRs", "warnings", "noOffenses",
+    "sealed", "removalOrder", "epo", "officers",
+}
+
+
 def _transform_summary(record: dict, level: str) -> dict:
     """
     Transform an API record to our DB schema.
     Maps camelCase → snake_case and adds the level discriminator.
+
+    Phase-38: also pulls `removalOrder` and `epo` from the basic
+    summary response and stashes any unrecognised fields in
+    `extra_metrics` so future API additions are not silently dropped.
     """
+    extras = {
+        k: v for k, v in (record or {}).items()
+        if k not in _KNOWN_SUMMARY_KEYS
+    } or None
     return {
-        "level":         level,
-        "division_id":   record.get("divisionId"),
-        "division_name": record.get("divisionName"),
-        "district_id":   record.get("districtId"),
-        "district_name": record.get("districtName"),
-        "tehsil_id":     record.get("tehsilId"),
-        "tehsil_name":   record.get("tehsilName"),
-        "total_actions": record.get("totalActions", 0),
-        "challans":      record.get("challans", 0),       # excludes overdue!
-        "firs":          record.get("fiRs", 0),
-        "warnings":      record.get("warnings", 0),
-        "no_offenses":   record.get("noOffenses", 0),
-        "sealed":        record.get("sealed", 0),
-        "snapshot_date": date.today().isoformat(),
+        "level":          level,
+        "division_id":    record.get("divisionId"),
+        "division_name":  record.get("divisionName"),
+        "district_id":    record.get("districtId"),
+        "district_name":  record.get("districtName"),
+        "tehsil_id":      record.get("tehsilId"),
+        "tehsil_name":    record.get("tehsilName"),
+        "total_actions":  record.get("totalActions", 0),
+        "challans":       record.get("challans", 0),       # excludes overdue!
+        "firs":           record.get("fiRs", 0),
+        "warnings":       record.get("warnings", 0),
+        "no_offenses":    record.get("noOffenses", 0),
+        "sealed":         record.get("sealed", 0),
+        # Phase-38 additive fields
+        "removal_order":  record.get("removalOrder", 0) or 0,
+        "epo":            record.get("epo", 0) or 0,
+        "extra_metrics":  extras,
+        "snapshot_date":  date.today().isoformat(),
     }
 
 
@@ -397,25 +417,33 @@ def _store_summary_batch(records: List[dict], db) -> int:
         INSERT INTO inspection_performance
             (level, division_id, division_name, district_id, district_name,
              tehsil_id, tehsil_name, total_actions, challans, firs,
-             warnings, no_offenses, sealed, snapshot_date)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+             warnings, no_offenses, sealed, removal_order, epo,
+             extra_metrics, source_updated_at, snapshot_date)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                %s, %s, %s::jsonb, NOW(), %s)
         ON CONFLICT (level, COALESCE(division_id, 0), COALESCE(district_id, 0),
                      COALESCE(tehsil_id, 0), snapshot_date)
         DO UPDATE SET
-            total_actions = EXCLUDED.total_actions,
-            challans      = EXCLUDED.challans,
-            firs          = EXCLUDED.firs,
-            warnings      = EXCLUDED.warnings,
-            no_offenses   = EXCLUDED.no_offenses,
-            sealed        = EXCLUDED.sealed,
-            division_name = EXCLUDED.division_name,
-            district_name = EXCLUDED.district_name,
-            tehsil_name   = EXCLUDED.tehsil_name,
-            ingested_at   = NOW()
+            total_actions     = EXCLUDED.total_actions,
+            challans          = EXCLUDED.challans,
+            firs              = EXCLUDED.firs,
+            warnings          = EXCLUDED.warnings,
+            no_offenses       = EXCLUDED.no_offenses,
+            sealed            = EXCLUDED.sealed,
+            removal_order     = EXCLUDED.removal_order,
+            epo               = EXCLUDED.epo,
+            extra_metrics     = EXCLUDED.extra_metrics,
+            source_updated_at = NOW(),
+            division_name     = EXCLUDED.division_name,
+            district_name     = EXCLUDED.district_name,
+            tehsil_name       = EXCLUDED.tehsil_name,
+            ingested_at       = NOW()
     """
+    import json as _json
     with db.connection() as conn:
         for r in records:
             try:
+                extras = r.get("extra_metrics")
                 conn.execute(sql, (
                     r["level"],
                     r.get("division_id"),  r.get("division_name"),
@@ -427,6 +455,9 @@ def _store_summary_batch(records: List[dict], db) -> int:
                     r.get("warnings", 0),
                     r.get("no_offenses", 0),
                     r.get("sealed", 0),
+                    r.get("removal_order", 0) or 0,
+                    r.get("epo", 0) or 0,
+                    _json.dumps(extras) if extras else None,
                     r.get("snapshot_date", date.today().isoformat()),
                 ))
                 stored += 1

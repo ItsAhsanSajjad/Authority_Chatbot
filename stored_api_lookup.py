@@ -53,10 +53,19 @@ _DOMAIN_KW = {
     "inspection": _re_for_dispatch.compile(
         r"\b(inspect(?:ion)?s?|fir(?:s)?|sealed|warning(?:s)?|"
         r"removal\s+orders?|epo|no\s+offen[cs]es?|muayina|jaiz[ae]|"
-        r"summery|summary|summmery)\b", _re_for_dispatch.I),
+        r"summery|summary|summmery|performance|dashboard|kpis?|"
+        r"report\s*card|"
+        # Phase-41: financial dashboard metrics — match here so a
+        # tehsil-level financial query routes to the inspection
+        # dashboard handler (which has the live SDEO merge) rather
+        # than to challan_data ranking.
+        r"fine\s+amount|fine\s+imposed|fine\s+recovered|"
+        r"paid\s+amount|outstanding\s+amount|unpaid\s+amount|"
+        r"recover(?:ed|y)\s+amount)\b",
+        _re_for_dispatch.I),
     "challan": _re_for_dispatch.compile(
-        r"\bch[ae]+l+a+n+s?\b|\bfine\s*amount\b|\bpaid\b|\bunpaid\b|"
-        r"\boverdue\b|\brecovery\b", _re_for_dispatch.I),
+        r"\bch[ae]+l+a+n+s?\b|\boverdue\b|"
+        r"\brecovery(?!\s+amount)\b", _re_for_dispatch.I),
     "oa": _re_for_dispatch.compile(
         r"\boperational?\s+activit(?:y|ies)\b|\boperations?\b|"
         r"\brequisition(?:s)?\b", _re_for_dispatch.I),
@@ -200,6 +209,35 @@ def choose_best_candidate(
     return best
 
 
+import threading as _threading
+
+# Thread-local diagnostics from the most recent detect_lookup_intent
+# call. Lets fastapi_app surface chosen_intent / runner_up / signals to
+# the audit log without changing the public detector API.
+_LAST_DIAG = _threading.local()
+
+
+def get_last_intent_diagnostics() -> Dict[str, Any]:
+    """Return the diagnostics dict from the most recent
+    `detect_lookup_intent` call on this thread, or {} if none.
+
+    Shape:
+      {
+        "chosen_intent": str,
+        "intent_confidence": float,
+        "runner_up_intent": str,
+        "runner_up_confidence": float,
+        "matched_signals": list[str],
+        "candidates_count": int,
+      }
+    """
+    return dict(getattr(_LAST_DIAG, "diag", {}) or {})
+
+
+def _set_last_intent_diagnostics(d: Dict[str, Any]) -> None:
+    _LAST_DIAG.diag = d
+
+
 def detect_lookup_intent(question: str,
                          last_turn_domain: str = "") -> Optional[str]:
     """
@@ -213,10 +251,26 @@ def detect_lookup_intent(question: str,
 
     Pass `last_turn_domain` (string from `LastTurn.domain`) to bias
     near-tie decisions toward the previous turn's domain.
+
+    Diagnostics from the dispatcher (chosen intent, confidence,
+    runner-up, matched signals) are stashed thread-locally and can be
+    fetched via `get_last_intent_diagnostics()`.
     """
     cands = detect_lookup_candidates(question, last_turn_domain)
     best = choose_best_candidate(cands, last_turn_domain)
-    return best.intent if best else None
+    if best is None:
+        _set_last_intent_diagnostics({})
+        return None
+    runner_up = cands[1] if len(cands) > 1 and cands[1] is not best else None
+    _set_last_intent_diagnostics({
+        "chosen_intent": best.intent,
+        "intent_confidence": best.score,
+        "runner_up_intent": (runner_up.intent if runner_up else ""),
+        "runner_up_confidence": (runner_up.score if runner_up else None),
+        "matched_signals": list(best.matched_signals),
+        "candidates_count": len(cands),
+    })
+    return best.intent
 
 
 def execute_lookup(

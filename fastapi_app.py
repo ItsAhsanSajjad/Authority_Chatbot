@@ -963,12 +963,39 @@ def simple_ask(request: Request, body: SimpleChatRequest):
                 lookup_type = detect_lookup_intent(question, _last_domain)
 
     if lookup_type:
-        # Pass both original and rewritten question — rewritten may have
-        # resolved pronouns/dates from conversation context
-        _lookup_q = query_for_retrieval if query_for_retrieval != question else question
+        # Phase-41: pass the ORIGINAL question (not the LLM-rewritten
+        # one) so focused-metric extraction sees the user's verbatim
+        # phrasing. The rewriter sometimes paraphrases "fine amount"
+        # → "fine details" or strips qualifiers, defeating the metric
+        # regex. Date parsing inside the executor handles relative
+        # phrases ("last week") via pera_dates directly.
+        _lookup_q = question or query_for_retrieval
         lookup_result = execute_lookup(lookup_type, question=_lookup_q)
         log.info("API lookup detected (type=%s, mode=%s, found=%s)",
                  lookup_type, source_mode, bool(lookup_result))
+
+    # ── Phase-44: operational-query trust gate ──
+    # If the user asked an operational/numeric question but no
+    # structured handler matched, refuse honestly instead of letting
+    # document RAG hallucinate operational counts.
+    operational_no_structured = False
+    try:
+        import re as _re_gate
+        from pera_source_policy import is_operational_query
+        if source_mode != "documents" and is_operational_query(question):
+            if not lookup_type:
+                operational_no_structured = True
+            else:
+                asks_officer = _re_gate.search(
+                    r"\btop\s+\d*\s*officers?\b|\bofficers?\s+by\b",
+                    question, _re_gate.I,
+                )
+                if asks_officer and "officer" not in (lookup_type or ""):
+                    operational_no_structured = True
+                    lookup_type = None
+                    lookup_result = None
+    except Exception:
+        pass
 
     if lookup_result and source_mode == "stored_api":
         # Pure stored API mode: use only the direct lookup data
@@ -981,6 +1008,34 @@ def simple_ask(request: Request, body: SimpleChatRequest):
             source_type_filter="document",
         )
         retrieval = merge_lookup_with_rag(lookup_retrieval, doc_retrieval)
+    elif operational_no_structured:
+        # Honest refusal — never fake operational numbers via doc RAG.
+        refusal = (
+            "I could not match this operational query to a live SDEO "
+            "dashboard handler. To stay accurate, I will not estimate "
+            "operational counts from policy documents. Please specify "
+            "a location (tehsil / district / division), an officer "
+            "name, or a date range so I can route to the right SDEO "
+            "endpoint."
+        )
+        log_audit_entry(
+            request_id=rid, session_id=sid, question=question,
+            decision="operational_refuse", answer_text=refusal,
+            answer_source_mode=source_mode,
+        )
+        return SimpleChatResponse(
+            answer=(ack_prefix + refusal) if ack_prefix else refusal,
+            decision="refuse",
+            references=[],
+            session_id=sid,
+            source_mode=source_mode,
+            source_mode_label="SDEO Dashboard Live API",
+            provenance=(
+                "Operational query without a matched structured handler. "
+                "Document RAG was intentionally NOT used to keep numbers "
+                "honest."
+            ),
+        )
     else:
         # Default: normal FAISS retrieval path
         retrieval = retrieve(
@@ -1117,6 +1172,20 @@ def simple_ask(request: Request, body: SimpleChatRequest):
             "unsupported_claims": grounding.get("unsupported_claims", [])[:3],
         }
 
+    # Phase-6 hardening — pull dispatcher diagnostics + answerer
+    # numeric-validation/deterministic flags into the audit entry.
+    intent_diag: Dict[str, Any] = {}
+    try:
+        from stored_api_lookup import get_last_intent_diagnostics
+        intent_diag = get_last_intent_diagnostics()
+    except Exception:
+        intent_diag = {}
+    numeric_validation_payload = result.get("numeric_validation")
+    deterministic_used = bool(result.get("deterministic"))
+    evidence_type_used = result.get("evidence_type") or (
+        retrieval.get("evidence_type") if isinstance(retrieval, dict) else None
+    )
+
     log_audit_entry(
         request_id=rid,
         session_id=sid,
@@ -1137,10 +1206,45 @@ def simple_ask(request: Request, body: SimpleChatRequest):
         auth_identity=get_auth_identity(request),
         prompt_version=_settings.PROMPT_VERSION,
         answer_source_mode=source_mode,
+        # Phase-6 diagnostics
+        chosen_intent=intent_diag.get("chosen_intent", lookup_type or ""),
+        intent_confidence=intent_diag.get("intent_confidence"),
+        runner_up_intent=intent_diag.get("runner_up_intent", ""),
+        runner_up_confidence=intent_diag.get("runner_up_confidence"),
+        matched_signals=intent_diag.get("matched_signals"),
+        structured_last_turn_after=session.structured_last_turn,
+        numeric_validation_result=(
+            numeric_validation_payload
+            if isinstance(numeric_validation_payload, dict)
+            else None
+        ),
+        deterministic_answer_used=deterministic_used,
+        extra={"evidence_type": evidence_type_used} if evidence_type_used else None,
     )
 
     # ── 9. Build response ─────────────────────────────────────
     final_answer = (ack_prefix + answer_text) if ack_prefix else answer_text
+
+    # Phase-44: when the answer came from a live SDEO structured
+    # handler (deterministic bypass / structured_analytics / aggregate
+    # / ranking / officer_table), override the source-mode badge so
+    # the UI doesn't say "Documents + Stored API Data" for a live
+    # SDEO answer.
+    is_live_structured = bool(result.get("deterministic")) or (
+        result.get("evidence_type") in (
+            "structured_analytics", "ranking", "aggregate",
+            "officer_table", "financial_summary", "sdeo_live_dashboard",
+        )
+    )
+    if is_live_structured:
+        badge = "SDEO Dashboard Live API"
+        prov = (
+            "This answer was generated from live SDEO Dashboard API "
+            "endpoints with deterministic rendering."
+        )
+    else:
+        badge = SOURCE_MODE_LABELS.get(source_mode, "Documents + Stored API Data")
+        prov = SOURCE_MODE_PROVENANCE.get(source_mode, "")
 
     return SimpleChatResponse(
         answer=final_answer,
@@ -1149,8 +1253,8 @@ def simple_ask(request: Request, body: SimpleChatRequest):
         session_id=sid,
         grounding=grounding,
         source_mode=source_mode,
-        source_mode_label=SOURCE_MODE_LABELS.get(source_mode, "Documents + Stored API Data"),
-        provenance=SOURCE_MODE_PROVENANCE.get(source_mode, ""),
+        source_mode_label=badge,
+        provenance=prov,
     )
 
 

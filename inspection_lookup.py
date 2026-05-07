@@ -48,6 +48,14 @@ SDEO_CHALLAN_STATUS_BREAKDOWN = (
 PCM_DASHBOARD_COUNTS = (
     "https://pera360.punjab.gov.pk/backend/api/Pcm/dashboard-counts"
 )
+# Phase-43: officer-level financial details endpoint. Returns one row
+# per officer with totalChallans / fineAmount / paidChallanAmount /
+# unPaidChallanAmount / totalPaidChallans / totalUnPaidChallans.
+# Probe results: accepts `startDate`/`endDate` date-only and matches the
+# dashboard "Top Officers by Challans" tile.
+PCM_OFFICER_INSPECTION_DETAILS = (
+    "https://pera360.punjab.gov.pk/backend/api/Pcm/officer-inspection-details"
+)
 
 
 def _get_db():
@@ -93,7 +101,29 @@ _INSP_KEYWORDS = re.compile(
     # location and date range are clearly present.
     r"summ+[ae]r+i?y?|summer+y|"
     r"performance\s+(?:report|summary|stats|figures)|"
-    r"overall\s+(?:summary|performance|figures|report)"
+    r"overall\s+(?:summary|performance|figures|report)|"
+    # Phase-39: dashboard / report-card / KPI queries with a location
+    # + date range should land on the inspection performance handler
+    # so the user gets a full SDEO-dashboard-style answer rather than
+    # a generic challan-only or doc-RAG response.
+    r"\bperformance\b|"
+    r"\breport\s*card\b|"
+    r"\bdashboard\b|"
+    r"\bkpis?\b|"
+    r"\boverview\b|"
+    r"\bcard\s+summary\b|"
+    # Phase-41: financial metric keywords. A query like
+    # "Multan City paid amount from 1 April to 20 April 2026" needs
+    # to reach the inspection performance handler so the focused
+    # extractor can render a clean Paid Amount card.
+    r"\bfine\s*(?:amount|imposed|recovered)?\b|"
+    r"\bpaid\s+amount\b|"
+    r"\bunpaid\s+amount\b|"
+    r"\boutstanding\s+amount\b|"
+    r"\brecover(?:ed|y)\s+amount\b|"
+    r"\brecovery\b|"
+    r"\bpaid\s+ch[ae]+l+a+ns?\b|"
+    r"\bunpaid\s+ch[ae]+l+a+ns?\b"
     r")\b",
     re.I,
 )
@@ -273,7 +303,28 @@ _AMOUNT_QUALIFIER_RE = re.compile(
 )
 
 
+_OFFICER_RANK_RE = re.compile(r"\btop\s+\d*\s*officers?\b|\bofficers?\s+by\b", re.I)
+
+
 def _detect_rank_intent(q: str) -> Optional[str]:
+    """Return ranking intent or None.
+
+    Phase-44: when the user asks "top officers by X" without a
+    location, return None — there is no province-wide officer
+    ranking endpoint, and ranking by tehsil would mis-answer the
+    user. The fastapi operational-refusal gate then asks for a
+    location/scope.
+    """
+    if _OFFICER_RANK_RE.search(q or ""):
+        # Block officer-ranking when the query has no location anchor.
+        # No public province-wide officer-ranking endpoint exists, and
+        # falling through to tehsil-level ranking would mis-answer.
+        # The fastapi operational-refusal gate then asks for scope.
+        has_location_kw = bool(re.search(
+            r"\b(tehsil|station|district|division)s?\b", q or "", re.I
+        ))
+        if not has_location_kw:
+            return None
     """Return e.g. 'insp_top:firs:tehsil:desc' or
     'insp_top:paid_amount:tehsil:desc' or None.
 
@@ -750,16 +801,20 @@ def execute_inspection_lookup(
         return _query_insp_summary(db, start_date, end_date)
     elif base == "insp_division":
         name = ":".join(parts[1:]) if len(parts) > 1 else ""
-        return _query_insp_location(db, "division", name, start_date, end_date)
+        return _query_insp_location(db, "division", name, start_date, end_date,
+                                    question=question)
     elif base == "insp_district":
         name = ":".join(parts[1:]) if len(parts) > 1 else ""
-        return _query_insp_location(db, "district", name, start_date, end_date)
+        return _query_insp_location(db, "district", name, start_date, end_date,
+                                    question=question)
     elif base == "insp_tehsil":
         name = ":".join(parts[1:]) if len(parts) > 1 else ""
-        return _query_insp_location(db, "tehsil", name, start_date, end_date)
+        return _query_insp_location(db, "tehsil", name, start_date, end_date,
+                                    question=question)
     elif base == "insp_officer":
         officer_name = ":".join(parts[1:]) if len(parts) > 1 else ""
-        return _query_insp_officer(db, officer_name, start_date, end_date)
+        return _query_insp_officer(db, officer_name, start_date, end_date,
+                                   question=question)
     elif base == "insp_cnic":
         cnic = ":".join(parts[1:]) if len(parts) > 1 else ""
         return _query_insp_cnic(db, cnic)
@@ -778,27 +833,51 @@ def execute_inspection_lookup(
 def _query_top_by_amount(
     db, status_filter: Optional[str], sum_col: str, level: str,
     order: str = "desc", metric_name: str = "fine_amount",
+    question: str = "",
 ) -> Dict[str, Any]:
     """Rank tehsils/districts/divisions by SUM(<sum_col>) from challan_data,
     optionally filtered to a payment status.
+
+    Phase-41: when the user's question carries a date range, apply
+    `WHERE action_date BETWEEN …` so the ranking is date-filtered
+    rather than silently all-time.
     """
     direction = "ASC" if (order or "").lower() == "asc" else "DESC"
     label_map = {
-        "paid_amount": "Paid Amount (Rs)",
-        "unpaid_amount": "Unpaid Outstanding (Rs)",
-        "overdue_amount": "Overdue Outstanding (Rs)",
-        "fine_amount": "Total Fine Imposed (Rs)",
+        "paid_amount": "Paid Amount",
+        "unpaid_amount": "Outstanding Amount",
+        "overdue_amount": "Outstanding Amount",
+        "fine_amount": "Fine Imposed",
     }
     metric_label = label_map.get(metric_name, "Amount (Rs)")
     level_label = {"tehsil": "Tehsil",
                    "district": "District",
                    "division": "Division"}[level]
 
-    where_clause = ""
-    args: tuple = ()
+    # Detect optional date range from the question.
+    user_start = user_end = None
+    try:
+        from pera_dates import parse_date_range
+        dr = parse_date_range(question or "")
+        if dr is not None:
+            user_start, user_end = dr.start, dr.end
+    except Exception:
+        user_start = user_end = None
+
+    where_parts: List[str] = []
+    args: List[Any] = []
     if status_filter:
-        where_clause = "WHERE LOWER(challan_status) = %s"
-        args = (status_filter,)
+        where_parts.append("LOWER(challan_status) = %s")
+        args.append(status_filter)
+    if user_start and user_end:
+        where_parts.append("action_date BETWEEN %s AND %s")
+        args.extend([user_start, user_end])
+    where_clause = ("WHERE " + " AND ".join(where_parts)) if where_parts else ""
+    args_tuple = tuple(args)
+    scope_note = (
+        f"date-filtered ({user_start} to {user_end})" if user_start and user_end
+        else "all-time stored challan records"
+    )
 
     if level == "tehsil":
         rows = db.fetch_all(
@@ -809,7 +888,7 @@ def _query_top_by_amount(
             f"GROUP BY tehsil_name "
             f"ORDER BY metric_value {direction} NULLS LAST "
             f"LIMIT 25",
-            args,
+            args_tuple,
         )
     elif level == "district":
         rows = db.fetch_all(
@@ -820,7 +899,7 @@ def _query_top_by_amount(
             f"GROUP BY district_name "
             f"ORDER BY metric_value {direction} NULLS LAST "
             f"LIMIT 25",
-            args,
+            args_tuple,
         )
     else:  # division
         rows = db.fetch_all(
@@ -831,7 +910,7 @@ def _query_top_by_amount(
             f"GROUP BY division_name "
             f"ORDER BY metric_value {direction} NULLS LAST "
             f"LIMIT 25",
-            args,
+            args_tuple,
         )
 
     if not rows:
@@ -844,22 +923,17 @@ def _query_top_by_amount(
         }
 
     sort_word = "Lowest" if direction == "ASC" else "Highest"
-    ctx = f"Ranking — {level_label}s by {metric_label} ({sort_word} first)\n"
-    ctx += "=" * 50 + "\n"
-    ctx += (
-        f"{'Rank':<5s}{level_label:<25s} {metric_label:>22s}  "
-        f"Challans\n"
-    )
+    ctx = f"### Ranking — {level_label}s by {metric_label} ({sort_word} first)\n\n"
+    ctx += f"**Scope:** {scope_note}  \n"
+    ctx += "**Source:** Stored challan_data table\n\n"
+    ctx += f"| Rank | {level_label} | {metric_label} | Challans |\n"
+    ctx += "| --- | --- | ---: | ---: |\n"
     for i, r in enumerate(rows, 1):
         ctx += (
-            f"{i:<5d}{(r.get('loc_name') or '—'):<25s} "
-            f"Rs. {int(r.get('metric_value') or 0):>18,}  "
-            f"{int(r.get('challan_count') or 0):>8,}\n"
+            f"| {i} | {r.get('loc_name') or '—'} "
+            f"| Rs. {int(r.get('metric_value') or 0):,} "
+            f"| {int(r.get('challan_count') or 0):,} |\n"
         )
-    ctx += (
-        f"\n(Ranking computed from challan_data row-level SUM. "
-        f"Cumulative all-time totals; not date-range filtered.)\n"
-    )
     return {
         "source_id": f"insp_top:{metric_name}:{level}:{order}",
         "records": rows,
@@ -982,11 +1056,16 @@ def _query_top_by_payment_status(
 
 def _query_top_locations(
     db, metric: str, level: str, order: str = "desc",
+    question: str = "",
 ) -> Dict[str, Any]:
     """Rank tehsils/districts/divisions by a metric using the latest
     snapshot in inspection_performance. Used for "which station has the
     most FIRs" / "top 5 tehsils by sealed" / "sab sy ziada konsa stations
     fir kr raha hy" type queries.
+
+    `question` is forwarded so amount rankings can detect a date range
+    and apply WHERE action_date BETWEEN … instead of returning all-time
+    silently.
     """
     safe_metrics = {"firs", "sealed", "challans", "warnings",
                     "no_offenses", "total_actions",
@@ -1015,7 +1094,7 @@ def _query_top_locations(
     if amount_metric_status:
         status_filter, sum_col = amount_metric_status
         return _query_top_by_amount(db, status_filter, sum_col, level,
-                                    order, metric)
+                                    order, metric, question=question)
 
     # Count-based payment rankings → challan_tehsil_breakdown.
     payment_metric = {
@@ -1099,7 +1178,11 @@ def _query_insp_summary(
     """
     rows = db.fetch_all(
         "SELECT division_name, total_actions, challans, "
-        "       firs, warnings, no_offenses, sealed "
+        "       firs, warnings, no_offenses, sealed, "
+        "       removal_order, epo, "
+        "       arrest_count, pcm_count, "
+        "       fine_imposed, fine_recovered, fine_outstanding, "
+        "       paid_count, unpaid_count "
         "FROM inspection_performance "
         "WHERE level = 'division' AND snapshot_date = ("
         "  SELECT MAX(snapshot_date) FROM inspection_performance WHERE level = 'division'"
@@ -1124,14 +1207,25 @@ def _query_insp_summary(
     except Exception:
         pass
 
-    # Compute totals
-    totals = {
-        "total_actions": 0, "challans": 0,
-        "firs": 0, "warnings": 0, "no_offenses": 0, "sealed": 0,
-    }
+    # Compute totals — additive over all divisions
+    int_keys = (
+        "total_actions", "challans", "firs", "warnings", "no_offenses",
+        "sealed", "removal_order", "epo", "arrest_count", "pcm_count",
+        "paid_count", "unpaid_count",
+    )
+    money_keys = ("fine_imposed", "fine_recovered", "fine_outstanding")
+    totals = {k: 0 for k in int_keys}
+    money_totals = {k: 0.0 for k in money_keys}
     for r in rows:
-        for k in totals:
-            totals[k] += (r.get(k) or 0)
+        for k in int_keys:
+            totals[k] += int(r.get(k) or 0)
+        for k in money_keys:
+            v = r.get(k)
+            if v is not None:
+                try:
+                    money_totals[k] += float(v)
+                except (TypeError, ValueError):
+                    pass
 
     context = "Inspection Performance Summary (All Divisions)\n"
     context += "=" * 50 + "\n"
@@ -1141,6 +1235,27 @@ def _query_insp_summary(
     context += f"Warnings: {totals['warnings']:,}\n"
     context += f"No Offenses: {totals['no_offenses']:,}\n"
     context += f"Sealed: {totals['sealed']:,}\n"
+    # Phase-38 additions — only emit lines for non-zero columns so older
+    # snapshots without these fields stay clean.
+    if totals["removal_order"]:
+        context += f"Removal Orders: {totals['removal_order']:,}\n"
+    if totals["epo"]:
+        context += f"EPO: {totals['epo']:,}\n"
+    if totals["arrest_count"]:
+        context += f"Arrest Cases: {totals['arrest_count']:,}\n"
+    if totals["pcm_count"]:
+        context += f"PCM: {totals['pcm_count']:,}\n"
+    if money_totals["fine_imposed"]:
+        context += f"Fine Imposed: Rs. {int(money_totals['fine_imposed']):,}\n"
+    if money_totals["fine_recovered"]:
+        context += f"Fine Recovered: Rs. {int(money_totals['fine_recovered']):,}\n"
+    if money_totals["fine_outstanding"]:
+        context += f"Fine Outstanding: Rs. {int(money_totals['fine_outstanding']):,}\n"
+    if totals["paid_count"]:
+        context += f"Paid Challans: {totals['paid_count']:,}\n"
+    if totals["unpaid_count"]:
+        context += f"Unpaid Challans: {totals['unpaid_count']:,}\n"
+
     context += "\nDivision Breakdown:\n"
     for r in rows:
         context += (
@@ -1174,21 +1289,22 @@ def _query_insp_summary(
 def _query_insp_location(
     db, level: str, name: str,
     start_date: Optional[date], end_date: Optional[date],
+    question: str = "",
 ) -> Dict[str, Any]:
     """Query inspection_performance for a specific location + its children.
     For tehsil-level queries with date range, calls SDEO API live.
+
+    `question` is forwarded to the live tehsil handler so it can pick
+    between the full dashboard and a focused-metric report.
     """
     col = f"{level}_name"
     source_id = f"insp_{level}:{name}"
 
     # ── Date-ranged → LIVE SDEO API CALL ──
-    # SDEO summary/KPI endpoints accept tehsilId only. For district and
-    # division queries with a date filter we fan out to every tehsil in
-    # the hierarchy and aggregate the responses, since the SDEO backend
-    # has no district/division-level date-range endpoints.
     if start_date and end_date:
         if level == "tehsil":
-            return _query_tehsil_live(db, name, start_date, end_date, source_id)
+            return _query_tehsil_live(db, name, start_date, end_date,
+                                      source_id, question=question)
         if level == "district":
             return _query_district_live(db, name, start_date, end_date, source_id)
         if level == "division":
@@ -1345,8 +1461,13 @@ def _query_insp_location(
 # ── Live SDEO API call for tehsil + date range ──────────────
 def _query_tehsil_live(
     db, tehsil_name: str, start_date: date, end_date: date, source_id: str,
+    question: str = "",
 ) -> Dict[str, Any]:
-    """Call SDEO inspections-summary API live for a tehsil with date filter."""
+    """Call SDEO inspections-summary API live for a tehsil with date filter.
+
+    `question` is forwarded so the focused-metric extractor can decide
+    whether to render the full dashboard or a single-metric report.
+    """
     # Look up tehsil_id
     rows = db.fetch_all(
         "SELECT tehsil_id FROM dim_tehsil WHERE tehsil_name = %s LIMIT 1",
@@ -1368,18 +1489,20 @@ def _query_tehsil_live(
 
     tehsil_id = rows[0]["tehsil_id"]
 
-    # endDate passed verbatim — see _fetch_tehsil_metrics for the
-    # rationale (we mirror the SDEO UI's date-picker convention so
-    # chatbot totals match what the user reads off the dashboard).
-    api_end_date = end_date
+    # SDEO dashboard date-picker default = 12:00 AM start, 11:59 PM end.
+    # Sending date-only would be midnight (= exclusive of the final
+    # day), so we use the canonical formatter to get inclusive
+    # T00:00:00 / T23:59:59 boundaries that match dashboard tiles.
+    from pera_dates import to_sdeo_start_end
+    api_start_str, api_end_str = to_sdeo_start_end(start_date, end_date)
 
     try:
         resp = requests.get(
             SDEO_INSPECTIONS_SUMMARY,
             params={
                 "tehsilId": tehsil_id,
-                "startDate": start_date.isoformat(),
-                "endDate": api_end_date.isoformat(),
+                "startDate": api_start_str,
+                "endDate": api_end_str,
             },
             headers=_HEADERS,
             timeout=_API_TIMEOUT,
@@ -1414,57 +1537,26 @@ def _query_tehsil_live(
     epo = data.get("epo", 0) or 0
     officers = data.get("officers", []) or []
 
-    context = f"Inspection Performance — Tehsil: {tehsil_name}\n"
-    context += f"Date Range: {start_date} to {end_date}\n"
-    context += "=" * 50 + "\n"
-    context += f"Total Inspections/Actions: {total_actions:,}\n"
-    context += f"Challans: {challans:,}\n"
-    context += f"FIRs: {firs:,}\n"
-    context += f"Warnings: {warnings:,}\n"
-    context += f"No Offenses: {no_offenses:,}\n"
-    context += f"Sealed: {sealed:,}\n"
-    if removal_order:
-        context += f"Removal Orders: {removal_order:,}\n"
-    if epo:
-        context += f"EPO (Environmental Protection Orders): {epo:,}\n"
-
-    if officers:
-        context += f"\nOfficer Breakdown ({len(officers)} officers):\n"
-        for o in sorted(officers, key=lambda x: -(x.get("inspection", 0) or 0)):
-            parts = [
-                f"{o.get('inspection', 0):,} inspections",
-                f"{o.get('challan', 0):,} challans",
-                f"{o.get('warning', 0):,} warnings",
-            ]
-            if o.get("fir", 0):
-                parts.append(f"{o['fir']} FIRs")
-            if o.get("sealed", 0):
-                parts.append(f"{o['sealed']} sealed")
-            if o.get("removalOrder", 0):
-                parts.append(f"{o['removalOrder']} removal orders")
-            if o.get("epo", 0):
-                parts.append(f"{o['epo']} EPOs")
-            context += f"  {o.get('officerName', 'Unknown')}: {', '.join(parts)}\n"
-
-    # ── Date-ranged supplements from auxiliary SDEO endpoints ──
-    # inspections-summary returns counts but no fine/paid/arrest/PCM. The
-    # SDEO dashboard fills these from three sibling endpoints, so we mirror
-    # that here for parity with the dashboard UI.
+    # ── Auxiliary endpoint merges (top-kpis + status + PCM) ──
     fine_imposed = fine_recovered = unpaid_fine = None
     paid_count = unpaid_count = None
+    paid_amount = unpaid_amount = None
     arrest_total = pcm_total = None
+    force_deployed = None
     try:
         kpi = requests.get(
             SDEO_TOP_KPIS,
             params={"tehsilId": tehsil_id,
-                    "startDate": start_date.isoformat(),
-                    "endDate": api_end_date.isoformat()},
+                    "startDate": api_start_str,
+                    "endDate": api_end_str},
             headers=_HEADERS, timeout=_API_TIMEOUT,
         ).json()
         if isinstance(kpi, dict):
             fine_imposed = kpi.get("totalFineImposed")
             fine_recovered = kpi.get("totalFineRecovered")
             unpaid_fine = kpi.get("unpaidFineAmount")
+            # Dashboard "Enforcer" tile maps to totalForceDeployed.
+            force_deployed = kpi.get("totalForceDeployed")
     except Exception as e:
         log.debug("top-kpis fetch failed for %s: %s", tehsil_name, e)
 
@@ -1472,18 +1564,21 @@ def _query_tehsil_live(
         cs = requests.get(
             SDEO_CHALLAN_STATUS_BREAKDOWN,
             params={"tehsilId": tehsil_id,
-                    "startDate": start_date.isoformat(),
-                    "endDate": api_end_date.isoformat()},
+                    "startDate": api_start_str,
+                    "endDate": api_end_str},
             headers=_HEADERS, timeout=_API_TIMEOUT,
         ).json()
         if isinstance(cs, dict):
             paid_count = cs.get("paidCount")
             unpaid_count = cs.get("unpaidCount")
+            paid_amount = cs.get("paidAmount")
+            unpaid_amount = cs.get("unpaidAmount")
     except Exception as e:
         log.debug("challan-status-breakdown fetch failed for %s: %s", tehsil_name, e)
 
-    # PCM/dashboard-counts ignores date filter — returns all-time totals.
-    # Surface arrest + PCM with an explicit "all-time" disclosure.
+    # Pcm/dashboard-counts is all-time only (date params ignored).
+    # Pulled separately and surfaced in the all-time footer, NOT in
+    # the date-ranged KPI table.
     try:
         pcm_dc = requests.get(
             PCM_DASHBOARD_COUNTS,
@@ -1496,25 +1591,102 @@ def _query_tehsil_live(
     except Exception as e:
         log.debug("Pcm/dashboard-counts fetch failed for %s: %s", tehsil_name, e)
 
-    if fine_imposed is not None:
-        context += f"Fine Amount (imposed): Rs. {int(fine_imposed):,}\n"
-    if fine_recovered is not None:
-        context += f"Fine Recovered (paid): Rs. {int(fine_recovered):,}\n"
-    if unpaid_fine is not None:
-        context += f"Fine Outstanding (unpaid): Rs. {int(unpaid_fine):,}\n"
-    if paid_count is not None:
-        context += f"Paid Challans: {int(paid_count):,}\n"
-    if unpaid_count is not None:
-        context += f"Unpaid Challans: {int(unpaid_count):,}\n"
-    if arrest_total is not None:
-        context += f"Arrest Cases (all-time): {int(arrest_total):,}\n"
-    if pcm_total is not None:
-        context += f"PCM (all-time): {int(pcm_total):,}\n"
+    metrics = {
+        "total_inspections": total_actions,
+        "total_challans": challans,
+        "fine_amount": fine_imposed,
+        "sealed": sealed,
+        # Arrest is omitted from the date-ranged primary table because
+        # the Pcm/dashboard-counts endpoint ignores date filters and
+        # would mis-label all-time arrests as date-filtered. Surfaced
+        # in the all-time footer below instead.
+        "arrest": None,
+        "enforcer": force_deployed if force_deployed is not None else (
+            len(officers) if officers else None
+        ),
+        "warnings": warnings,
+        "paid_challans": paid_count,
+        "unpaid_challans": unpaid_count,
+        "paid_amount": paid_amount,
+        "outstanding_amount": unpaid_amount if unpaid_amount is not None else unpaid_fine,
+        "fine_recovered": fine_recovered,
+        "firs": firs,
+        "no_offenses": no_offenses,
+        "removal_orders": removal_order,
+        "epo": epo,
+    }
 
-    context += "\n(Counts and fines are filtered by the requested date range. "
-    context += "Arrest and PCM totals are all-time figures from the PCM dashboard endpoint.)\n"
+    # Phase-40: focused-metric branch. If the user explicitly mentioned
+    # one or more metrics in the question, render the focused report
+    # instead of the full dashboard summary.
+    requested_metrics = extract_requested_metrics(question or "")
+    if requested_metrics:
+        # Phase-43: when user asked about a financial metric we swap
+        # the officer source from inspections-summary.officers[]
+        # (no fine values) to /Pcm/officer-inspection-details (full
+        # fine + recovery breakdown).
+        money_metrics = {"fine_amount", "paid_amount", "outstanding_amount",
+                         "fine_recovered"}
+        is_money_focus = any(m in money_metrics for m in requested_metrics)
+        officer_source_rows = officers
+        officer_source_name = None
+        if is_money_focus:
+            fin_rows = fetch_officer_financial_breakdown(
+                tehsil_id, start_date, end_date, location_name=tehsil_name,
+            )
+            if fin_rows:
+                # Re-shape into the keys our get_officer_metric_value
+                # already understands.
+                officer_source_rows = [
+                    {
+                        "officerName": r["officer_name"],
+                        "challan": r["challans"],
+                        "fineAmount": r["fine_imposed"],
+                        "paidAmount": r["fine_recovered"],
+                        "outstandingAmount": r["outstanding_amount"],
+                        "paid_recovery_pct": r["paid_recovery_pct"],
+                    }
+                    for r in fin_rows
+                ]
+                officer_source_name = "Pcm/officer-inspection-details"
+        context = render_focused_metric_summary(
+            metrics,
+            requested_metrics=requested_metrics,
+            location_name=tehsil_name,
+            date_range=(start_date, end_date),
+            source="SDEO Dashboard (Live)",
+            officer_rows=officer_source_rows,
+            officer_source=officer_source_name,
+        )
+    else:
+        context = render_dashboard_summary(
+            metrics,
+            location_name=tehsil_name,
+            date_range=(start_date, end_date),
+            source="SDEO Dashboard (Live)",
+            officer_rows=officers,
+        )
 
-    # Phase 1 — live API freshness stamp
+    # Optional all-time footer for arrest + PCM. Suppressed for
+    # money-only focused queries (Phase-42) since the user is asking
+    # about a specific financial metric and dashboard parity demands
+    # we don't dilute the answer with unrelated cumulative figures.
+    money_only_focus = bool(requested_metrics) and all(
+        k in {"fine_amount", "paid_amount", "outstanding_amount",
+              "fine_recovered"}
+        for k in requested_metrics
+    )
+    show_all_time_footer = (
+        not money_only_focus
+        and (arrest_total is not None or pcm_total is not None)
+    )
+    if show_all_time_footer:
+        context += "\n#### All-time indicators (PCM endpoint, not date-filtered)\n\n"
+        if arrest_total is not None:
+            context += f"- Arrest cases: {int(arrest_total):,}\n"
+        if pcm_total is not None:
+            context += f"- PCM: {int(pcm_total):,}\n"
+
     try:
         from freshness_helper import format_freshness_footer
         context += format_freshness_footer(
@@ -1529,7 +1701,547 @@ def _query_tehsil_live(
         "source_id": source_id,
         "records": [data],
         "formatted_context": context,
+        "deterministic_answer": context,
+        "structured_payload": context,
+        "evidence_type": "structured_analytics",
     }
+
+
+# ══════════════════════════════════════════════════════════════
+# Phase-40: focused-metric detection + renderers
+# ══════════════════════════════════════════════════════════════
+# Map of canonical metric key → (display label, regex of aliases).
+# Order matters: longer / more specific aliases (e.g. "fine recovered")
+# must be checked before shorter overlapping ones (e.g. "fine amount").
+_METRIC_LABEL: Dict[str, str] = {
+    "firs": "FIRs Registered",
+    "sealed": "Sealed Premises",
+    "warnings": "Warnings",
+    "total_challans": "Total Challans",
+    "paid_challans": "Paid Challans",
+    "unpaid_challans": "Unpaid Challans",
+    "fine_amount": "Fine Imposed",
+    "paid_amount": "Paid Amount",
+    "outstanding_amount": "Outstanding Amount",
+    "fine_recovered": "Fine Recovered",
+    "no_offense": "No Offense",
+    "epo": "EPO",
+    "removal_order": "Removal Orders",
+    "arrest": "Arrest Cases",
+    "enforcer": "Enforcers",
+    "total_inspections": "Total Inspections",
+}
+
+_METRIC_PATTERNS: List[Tuple[str, "re.Pattern"]] = [
+    # Order: most specific first to avoid "fine recovered" being eaten
+    # by the generic "fine" / "fine amount" rule.
+    ("fine_recovered",     re.compile(r"\b(fine\s*recover(?:ed|y)?|recovered\s+amount|amount\s+recovered|recovery\s+amount)\b", re.I)),
+    ("paid_amount",        re.compile(r"\b(paid\s+amount|recovered\s+(?:fine\s+)?amount|amount\s+paid)\b", re.I)),
+    ("outstanding_amount", re.compile(r"\b(outstanding\s+amount|unpaid\s+amount|pending\s+amount|outstanding\s+fine)\b", re.I)),
+    ("fine_amount",        re.compile(r"\b(fine\s+amount|fine\s+imposed|total\s+fine|imposed\s+fine)\b", re.I)),
+    ("paid_challans",      re.compile(r"\b(paid\s+chall?[ae]+ns?|paid\s+chall?[ae]+n\s+count)\b", re.I)),
+    ("unpaid_challans",    re.compile(r"\b(unpaid\s+chall?[ae]+ns?|unpaid\s+chall?[ae]+n\s+count)\b", re.I)),
+    ("total_challans",     re.compile(r"\b(total\s+chall?[ae]+ns?|chall?[ae]+n\s+count)\b", re.I)),
+    ("firs",               re.compile(r"\bfirs?\b|\bfirs?\s+(?:registered|registr(?:ation|ed))\b", re.I)),
+    ("sealed",             re.compile(r"\b(sealed(?:\s+premises)?|sealing|seal\s+orders?)\b", re.I)),
+    ("warnings",           re.compile(r"\bwarnings?\b", re.I)),
+    ("no_offense",         re.compile(r"\bno\s+(?:offen[cs]es?|violations?)\b", re.I)),
+    ("epo",                re.compile(r"\bepos?\b", re.I)),
+    ("removal_order",      re.compile(r"\bremoval\s+orders?\b", re.I)),
+    ("arrest",             re.compile(r"\barrest(?:s|\s+cases?)?\b", re.I)),
+    ("enforcer",           re.compile(r"\b(enforcers?|force\s+deployed|total\s+force)\b", re.I)),
+    ("total_inspections",  re.compile(r"\b(total\s+inspect(?:ion)?s?|total\s+actions?)\b", re.I)),
+]
+
+# Words that suggest the user is asking about a specific metric, not a
+# generic dashboard summary. Without one of these, even keyword hits
+# don't trigger focused mode (so "Multan City warnings" alone still
+# routes to full summary; "Multan City performance on warnings" triggers
+# focused mode).
+_FOCUS_TRIGGER_RE = re.compile(
+    r"\b(on|about|regarding|of|for|by|specifically|only|just|"
+    r"details?|breakdown|stats?|count|counts|from)\b",
+    re.I,
+)
+
+# Metrics that are themselves explicit two-word phrases. When one of
+# these matches, focused mode fires unconditionally — the user clearly
+# asked about a specific KPI even if no other trigger word is present.
+_SELF_TRIGGER_METRICS = {
+    "paid_amount", "outstanding_amount", "fine_amount", "fine_recovered",
+}
+
+
+def extract_requested_metrics(question: str) -> List[str]:
+    """Return canonical metric keys the user asked about, or [] for a
+    generic dashboard summary.
+
+    Heuristic: the query must contain a focus trigger word (`on`,
+    `about`, `for`, `regarding`, etc.) AND match at least one metric
+    pattern. This avoids hijacking generic queries like
+    "Multan City performance" (no metric — full dashboard) while
+    catching "Multan City performance on FIRs" (focused).
+    """
+    q = (question or "").strip()
+    if not q:
+        return []
+    has_trigger = bool(_FOCUS_TRIGGER_RE.search(q))
+    seen: List[str] = []
+    for key, pat in _METRIC_PATTERNS:
+        if pat.search(q) and key not in seen:
+            seen.append(key)
+    if not seen:
+        return []
+    # If at least one matched metric is self-trigger (explicit
+    # 2-word money phrase), focus regardless of trigger word.
+    if any(k in _SELF_TRIGGER_METRICS for k in seen):
+        return seen
+    if not has_trigger:
+        return []
+    return seen
+
+
+# ── Phase-43: officer financial breakdown fetcher ────────────
+def fetch_officer_financial_breakdown(
+    tehsil_id: int,
+    start_date: date,
+    end_date: date,
+    *,
+    location_name: str = "",
+) -> List[Dict[str, Any]]:
+    """Fetch per-officer financial rows for a tehsil/date range.
+
+    Source: /Pcm/officer-inspection-details — same endpoint that powers
+    the dashboard's "Top Officers by Challans" tile. Date semantics:
+    `startDate` / `endDate` (date-only) match the dashboard exactly.
+
+    Returns rows shaped:
+      {
+        "officer_name", "challans", "fine_imposed",
+        "fine_recovered", "outstanding_amount",
+        "paid_recovery_pct",
+        "total_paid_challans", "total_unpaid_challans",
+        "source",
+      }
+
+    On HTTP failure returns []. Caller renders a "Not available" note.
+    """
+    if not tehsil_id or not start_date or not end_date:
+        return []
+    try:
+        resp = requests.get(
+            PCM_OFFICER_INSPECTION_DETAILS,
+            params={
+                "tehsilId": tehsil_id,
+                "startDate": start_date.isoformat(),
+                "endDate": end_date.isoformat(),
+            },
+            headers=_HEADERS, timeout=_API_TIMEOUT,
+        )
+        resp.raise_for_status()
+        rows = resp.json()
+        if not isinstance(rows, list):
+            return []
+    except Exception as e:
+        log.warning(
+            "Officer financial breakdown fetch failed (tehsil=%s, %s..%s): %s",
+            location_name or tehsil_id, start_date, end_date, e,
+        )
+        return []
+
+    out: List[Dict[str, Any]] = []
+    for r in rows:
+        if not isinstance(r, dict):
+            continue
+        total_challans = int(r.get("totalChallans") or 0)
+        paid_challans = int(r.get("totalPaidChallans") or 0)
+        # Dashboard "Paid Recovery %" = paid challan COUNT / total
+        # challan COUNT, NOT amount-ratio. Verified per probe.
+        recovery_pct = (
+            round(paid_challans / total_challans * 100, 2)
+            if total_challans > 0 else None
+        )
+        out.append({
+            "officer_name":          r.get("fullName") or "Unknown",
+            "challans":              total_challans,
+            "fine_imposed":          float(r.get("fineAmount") or 0),
+            "fine_recovered":        float(r.get("paidChallanAmount") or 0),
+            "outstanding_amount":    float(r.get("unPaidChallanAmount") or 0),
+            "paid_recovery_pct":     recovery_pct,
+            "total_paid_challans":   paid_challans,
+            "total_unpaid_challans": int(r.get("totalUnPaidChallans") or 0),
+            "source":                "Pcm/officer-inspection-details",
+        })
+    out.sort(key=lambda x: -x["challans"])
+    return out
+
+
+# ── Officer-row metric mapper ────────────────────────────────
+def get_officer_metric_value(
+    officer_row: Dict[str, Any], metric_key: str,
+) -> Optional[float]:
+    """Pull a per-officer numeric value for `metric_key`. Falls back
+    across the multiple raw key spellings the SDEO API uses.
+    """
+    if not officer_row:
+        return None
+    candidates: Dict[str, List[str]] = {
+        "firs":              ["fir", "firs", "firCase"],
+        "sealed":            ["sealed"],
+        "warnings":          ["warning", "warnings", "warningCase"],
+        "total_challans":    ["challan", "challans", "challanCase"],
+        "paid_challans":     ["paidChallan", "paid_challans", "paidCount"],
+        "unpaid_challans":   ["unpaidChallan", "unpaid_challans", "unpaidCount"],
+        "fine_amount":       ["fineAmount", "fine_imposed", "imposedFine"],
+        "paid_amount":       ["paidAmount", "paid_amount"],
+        "outstanding_amount":["unpaidAmount", "outstandingAmount"],
+        "no_offense":        ["noOffense", "noOffenses", "no_offense"],
+        "epo":               ["epo"],
+        "removal_order":     ["removalOrder", "removal_orders"],
+        "arrest":            ["arrestCase", "arrest", "arrests"],
+        "total_inspections": ["inspection", "totalInspections", "totalActions"],
+    }
+    for k in candidates.get(metric_key, []):
+        if k in officer_row and officer_row[k] is not None:
+            try:
+                return float(officer_row[k])
+            except (TypeError, ValueError):
+                pass
+    return None
+
+
+# ── Focused-metric renderer ──────────────────────────────────
+def render_focused_metric_summary(
+    metrics: Dict[str, Any],
+    requested_metrics: List[str],
+    location_name: str,
+    date_range: Optional[Tuple[Optional[date], Optional[date]]] = None,
+    source: str = "SDEO Dashboard",
+    freshness: Optional[str] = None,
+    officer_rows: Optional[List[Dict[str, Any]]] = None,
+    officer_source: Optional[str] = None,
+) -> str:
+    """Render a focused-metric report. Used when the user asked about
+    a specific metric (e.g. "performance on FIRs") instead of a full
+    dashboard summary.
+
+    Lays out:
+      - Title naming the metric(s) and location
+      - Date range + source
+      - Compact metric table
+      - Officer breakdown limited to the requested metric column(s)
+      - Short interpretive note for zero/empty results
+    """
+    if not requested_metrics:
+        return render_dashboard_summary(
+            metrics, location_name, date_range, source, freshness,
+            officer_rows=officer_rows,
+        )
+
+    # Heading reflects requested metrics. Money-only focused queries
+    # use a tighter title ("Fine Imposed — Multan City") because
+    # "Performance" implies activity totals.
+    label_for = lambda k: _METRIC_LABEL.get(k, k.replace("_", " ").title())
+    money_only = all(
+        k in {"fine_amount", "paid_amount", "outstanding_amount",
+              "fine_recovered"}
+        for k in requested_metrics
+    )
+    if len(requested_metrics) == 1:
+        title = label_for(requested_metrics[0])
+        if not money_only:
+            title += " Performance"
+    else:
+        labels = " and ".join(label_for(k) for k in requested_metrics)
+        title = labels if money_only else f"{labels} Performance"
+
+    head = f"### {title} — {location_name}\n\n"
+    if date_range and date_range[0] and date_range[1]:
+        head += f"**Date range:** {date_range[0]} to {date_range[1]}  \n"
+    head += f"**Source:** {source}\n"
+    if freshness:
+        head += f"**Freshness:** {freshness}\n"
+
+    def _fmt(val: Any, kind: str) -> str:
+        if val is None:
+            return "—"
+        try:
+            n = int(round(float(val)))
+        except (TypeError, ValueError):
+            return str(val)
+        return f"Rs. {n:,}" if kind == "money" else f"{n:,}"
+
+    # ── Metric table ──
+    head += "\n| Metric | Value |\n| --- | ---: |\n"
+    money_keys = {"fine_amount", "paid_amount", "outstanding_amount", "fine_recovered"}
+    metric_lines: List[str] = []
+    for key in requested_metrics:
+        v = metrics.get(key)
+        if v is None:
+            v = 0
+        kind = "money" if key in money_keys else "int"
+        metric_lines.append(f"| {label_for(key)} | {_fmt(v, kind)} |")
+    head += "\n".join(metric_lines) + "\n"
+
+    # ── Phase-43: financial officer breakdown via dedicated source ──
+    # When officer_source == 'Pcm/officer-inspection-details', the rows
+    # carry challans + fine + recovery — render a 4-col table.
+    if (officer_rows
+            and officer_source == "Pcm/officer-inspection-details"
+            and money_only):
+        head += (
+            "\n#### Officer Financial Breakdown\n"
+            "_Source: PCM officer-inspection-details endpoint._\n\n"
+            "| Officer | Challans | Fine Imposed | Paid Recovery % |\n"
+            "| --- | ---: | ---: | ---: |\n"
+        )
+        # Top 10 by challans (matches dashboard "Top Officers" tile).
+        for o in sorted(officer_rows, key=lambda x: -(x.get("challan") or 0))[:10]:
+            name = o.get("officerName") or "Unknown"
+            ch = int(o.get("challan") or 0)
+            fine = int(round(float(o.get("fineAmount") or 0)))
+            rec = o.get("paid_recovery_pct")
+            rec_str = f"{rec}%" if rec is not None else "—"
+            head += f"| {name} | {ch:,} | Rs. {fine:,} | {rec_str} |\n"
+
+        # Reconciliation note when officer fine sum diverges from KPI total
+        kpi_fine = metrics.get("fine_amount")
+        if kpi_fine is not None:
+            officer_sum = sum(
+                int(round(float(o.get("fineAmount") or 0)))
+                for o in officer_rows
+            )
+            try:
+                kpi_int = int(round(float(kpi_fine)))
+            except (TypeError, ValueError):
+                kpi_int = None
+            if kpi_int is not None and officer_sum != kpi_int:
+                head += (
+                    "\n_**Reconciliation note:** Officer-table fine sum "
+                    f"(Rs. {officer_sum:,}) differs from the KPI total "
+                    f"(Rs. {kpi_int:,}). The two endpoints can disagree "
+                    "due to date-boundary or cache timing._\n"
+                )
+        return head
+
+    # ── Officer breakdown — policy-aware (Phase-42) ──
+    # For each requested metric, decide whether ANY officer row carries
+    # a real (non-None) value. If yes, render. If no, skip the table
+    # entirely so we never display fake "Rs. 0" rows.
+    if officer_rows:
+        primary_metric = requested_metrics[0]
+
+        # Per-metric availability across officers.
+        per_metric_has_data: Dict[str, bool] = {
+            k: any(
+                get_officer_metric_value(o, k) is not None
+                for o in officer_rows
+            )
+            for k in requested_metrics
+        }
+        renderable_metrics = [k for k in requested_metrics if per_metric_has_data[k]]
+        unavailable_metrics = [k for k in requested_metrics if not per_metric_has_data[k]]
+
+        if renderable_metrics:
+            col_labels = ["Officer"] + [label_for(k) for k in renderable_metrics]
+            sep = ["---"] + ["---:" for _ in renderable_metrics]
+
+            def _sort_key(o: Dict[str, Any]) -> float:
+                v = get_officer_metric_value(o, renderable_metrics[0])
+                return -(v if v is not None else 0)
+
+            # Top-10 default — full list available via "all officers"/"top 25".
+            sorted_officers = sorted(officer_rows, key=_sort_key)[:10]
+            body_rows: List[str] = []
+            any_value = False
+            for o in sorted_officers:
+                name = o.get("officerName") or o.get("officer_name") or "Unknown"
+                vals: List[str] = []
+                for k in renderable_metrics:
+                    v = get_officer_metric_value(o, k)
+                    if v is not None and v != 0:
+                        any_value = True
+                    kind = "money" if k in money_keys else "int"
+                    # Real None -> "—"; real 0 -> "0"; real value -> formatted
+                    if v is None:
+                        vals.append("—")
+                    else:
+                        vals.append(_fmt(v, kind))
+                body_rows.append(f"| {name} | " + " | ".join(vals) + " |")
+
+            section_label = (
+                "Officer Financial Breakdown" if money_only
+                else "Officer breakdown"
+            )
+            head += (
+                f"\n#### {section_label}\n\n"
+                f"| {' | '.join(col_labels)} |\n"
+                f"| {' | '.join(sep)} |\n"
+                + "\n".join(body_rows) + "\n"
+            )
+
+            if not any_value:
+                head += (
+                    f"\n_No {label_for(primary_metric).lower()} were "
+                    f"recorded in {location_name} during this period._\n"
+                )
+
+        if unavailable_metrics:
+            unavail_labels = ", ".join(label_for(k) for k in unavailable_metrics)
+            head += (
+                f"\n**Officer-wise breakdown for {unavail_labels}:** "
+                f"Not available from the SDEO dashboard summary endpoint.\n"
+            )
+
+    return head
+
+
+# ══════════════════════════════════════════════════════════════
+# Phase-39: professional dashboard summary renderer
+# ══════════════════════════════════════════════════════════════
+def render_dashboard_summary(
+    metrics: Dict[str, Any],
+    location_name: str,
+    date_range: Optional[Tuple[Optional[date], Optional[date]]] = None,
+    source: str = "SDEO Dashboard",
+    freshness: Optional[str] = None,
+    officer_rows: Optional[List[Dict[str, Any]]] = None,
+) -> str:
+    """Render a clean SDEO-dashboard-style KPI markdown report with
+    section headings (Key KPI Cards / Financial / Enforcement /
+    Officer Breakdown).
+
+    `metrics` keys recognised (any may be None — None rows are skipped,
+    0 rows are kept for important KPIs like Arrest):
+      total_inspections, total_challans, fine_amount, sealed, arrest,
+      enforcer, warnings, paid_challans, unpaid_challans,
+      paid_amount, outstanding_amount, fine_recovered,
+      firs, no_offenses, removal_orders, epo, pcm,
+      partially_paid_count, partially_paid_amount, overdue_challans,
+      overdue_amount.
+
+    `officer_rows` is the raw `officers` list from the inspections
+    summary endpoint. When provided, an Officer Breakdown markdown
+    table is appended.
+    """
+    def _fmt(val: Any, kind: str) -> str:
+        if val is None:
+            return ""
+        try:
+            n = int(round(float(val)))
+        except (TypeError, ValueError):
+            return str(val)
+        return f"Rs. {n:,}" if kind == "money" else f"{n:,}"
+
+    # ── Header ──
+    head = f"### Performance Summary — {location_name}\n\n"
+    if date_range and date_range[0] and date_range[1]:
+        head += f"**Date range:** {date_range[0]} to {date_range[1]}  \n"
+    head += f"**Source:** {source}\n"
+    if freshness:
+        head += f"**Freshness:** {freshness}\n"
+
+    # ── Section: Key KPI Cards (date-filtered, primary tiles) ──
+    primary = [
+        ("Total Inspections", "total_inspections", "int"),
+        ("Total Challans",    "total_challans",    "int"),
+        ("Fine Imposed",      "fine_amount",       "money"),
+        ("Sealed Premises",   "sealed",            "int"),
+        ("Arrest Cases",      "arrest",            "int"),
+        ("Enforcers",         "enforcer",          "int"),
+        ("Warnings",          "warnings",          "int"),
+        ("Paid Challans",     "paid_challans",     "int"),
+        ("Unpaid Challans",   "unpaid_challans",   "int"),
+    ]
+    primary_rows = [
+        f"| {label} | {_fmt(metrics.get(key), kind)} |"
+        for label, key, kind in primary
+        if metrics.get(key) is not None
+    ]
+    section_kpi = ""
+    if primary_rows:
+        section_kpi = (
+            "\n#### Key KPI Cards\n\n"
+            "| KPI | Value |\n| --- | ---: |\n"
+            + "\n".join(primary_rows) + "\n"
+        )
+
+    # ── Section: Financial Breakdown ──
+    financial = [
+        ("Paid Amount",        "paid_amount",        "money"),
+        ("Outstanding Amount", "outstanding_amount", "money"),
+        ("Fine Recovered",     "fine_recovered",     "money"),
+    ]
+    fin_rows = [
+        f"| {label} | {_fmt(metrics.get(key), kind)} |"
+        for label, key, kind in financial
+        if metrics.get(key) is not None
+        and (int(round(float(metrics.get(key) or 0))) != 0)
+    ]
+    section_fin = ""
+    if fin_rows:
+        section_fin = (
+            "\n#### Financial Breakdown\n\n"
+            "| Metric | Value |\n| --- | ---: |\n"
+            + "\n".join(fin_rows) + "\n"
+        )
+
+    # ── Section: Enforcement Breakdown ──
+    enforcement = [
+        ("FIRs Registered", "firs",           "int"),
+        ("EPO",             "epo",            "int"),
+        ("Removal Orders",  "removal_orders", "int"),
+        ("No Offense",      "no_offenses",    "int"),
+    ]
+    enf_rows = [
+        f"| {label} | {_fmt(metrics.get(key), kind)} |"
+        for label, key, kind in enforcement
+        if metrics.get(key) is not None
+    ]
+    section_enf = ""
+    if enf_rows:
+        section_enf = (
+            "\n#### Enforcement Breakdown\n\n"
+            "| Metric | Value |\n| --- | ---: |\n"
+            + "\n".join(enf_rows) + "\n"
+        )
+
+    # ── Section: Officer Breakdown (markdown table, top-10) ──
+    section_officers = ""
+    if officer_rows:
+        # Cap at 10 rows by default to keep dashboards readable.
+        officer_rows = list(officer_rows)[:10]
+        cols = [
+            ("Inspections", "total_inspections", "int"),
+            ("Challans",    "total_challans",    "int"),
+            ("Warnings",    "warnings",          "int"),
+            ("Sealed",      "sealed",            "int"),
+        ]
+        col_labels = ["Officer"] + [c[0] for c in cols]
+        sep_cells = ["---"] + ["---:" for _ in cols]
+
+        sorted_officers = sorted(
+            officer_rows,
+            key=lambda o: -(get_officer_metric_value(o, "total_inspections") or 0),
+        )
+
+        body_rows: List[str] = []
+        for o in sorted_officers:
+            name = o.get("officerName") or o.get("officer_name") or "Unknown"
+            vals = [
+                _fmt(get_officer_metric_value(o, key), kind)
+                for _, key, kind in cols
+            ]
+            body_rows.append(f"| {name} | " + " | ".join(vals) + " |")
+        if body_rows:
+            section_officers = (
+                "\n#### Officer Breakdown\n\n"
+                f"| {' | '.join(col_labels)} |\n"
+                f"| {' | '.join(sep_cells)} |\n"
+                + "\n".join(body_rows) + "\n"
+            )
+
+    return head + section_kpi + section_fin + section_enf + section_officers
 
 
 # ══════════════════════════════════════════════════════════════
@@ -1545,16 +2257,15 @@ def _fetch_tehsil_metrics(
     end_date and we add a day before sending. Network failures surface as
     `error` so the aggregator can decide whether to keep going or abort.
     """
-    # SDEO endDate is exclusive at midnight: passing 2026-01-10 returns
-    # data through Jan 9 23:59:59. The dashboard's date-picker matches
-    # user-typed dates verbatim (e.g. "To 01/10/2026 12:00 AM"), so we
-    # mirror that — no +1-day shift — to keep chatbot totals identical
-    # to what the user reads from the SDEO UI.
-    api_end_date = end_date
+    # SDEO endDate is exclusive at midnight when sent date-only.
+    # Use the canonical formatter so end-of-day inclusive boundary
+    # matches the dashboard's "To … 11:59 PM" tile.
+    from pera_dates import to_sdeo_start_end
+    api_start_str, api_end_str = to_sdeo_start_end(start_date, end_date)
     params = {
         "tehsilId": tehsil_id,
-        "startDate": start_date.isoformat(),
-        "endDate": api_end_date.isoformat(),
+        "startDate": api_start_str,
+        "endDate": api_end_str,
     }
     out: Dict[str, Any] = {
         "tehsil_id": tehsil_id,
@@ -1562,56 +2273,81 @@ def _fetch_tehsil_metrics(
         "total_actions": 0, "challans": 0, "firs": 0, "warnings": 0,
         "no_offenses": 0, "sealed": 0, "removal_order": 0, "epo": 0,
         "officers": [],
-        "fine_imposed": 0.0, "fine_recovered": 0.0, "unpaid_fine": 0.0,
-        "paid_count": 0, "unpaid_count": 0,
+        # Phase-41 canonical money keys (Decimal-friendly floats)
+        "fine_imposed": 0.0, "fine_recovered": 0.0,
+        "outstanding_amount": 0.0, "paid_amount": 0.0,
+        "partially_paid_amount": 0.0,
+        # Counts
+        "paid_challans": 0, "unpaid_challans": 0,
+        "partially_paid_challans": 0,
+        # All-time PCM (kept separate so they never leak into date-ranged tables)
         "arrest_total": 0, "pcm_total": 0,
+        "all_time_total_fine": 0.0,
+        "all_time_paid_amount": 0.0,
+        "all_time_unpaid_amount": 0.0,
         "error": None,
     }
+    summary_resp = top_kpis_resp = status_resp = pcm_resp = None
     try:
-        d = requests.get(SDEO_INSPECTIONS_SUMMARY, params=params,
+        summary_resp = requests.get(SDEO_INSPECTIONS_SUMMARY, params=params,
                          headers=_HEADERS, timeout=_API_TIMEOUT).json()
-        if isinstance(d, dict):
-            out["total_actions"] = int(d.get("totalActions") or 0)
-            out["challans"] = int(d.get("challans") or 0)
-            out["firs"] = int(d.get("fiRs") or 0)
-            out["warnings"] = int(d.get("warnings") or 0)
-            out["no_offenses"] = int(d.get("noOffenses") or 0)
-            out["sealed"] = int(d.get("sealed") or 0)
-            out["removal_order"] = int(d.get("removalOrder") or 0)
-            out["epo"] = int(d.get("epo") or 0)
-            out["officers"] = d.get("officers") or []
+        if isinstance(summary_resp, dict):
+            out["total_actions"] = int(summary_resp.get("totalActions") or 0)
+            out["challans"] = int(summary_resp.get("challans") or 0)
+            out["firs"] = int(summary_resp.get("fiRs") or 0)
+            out["warnings"] = int(summary_resp.get("warnings") or 0)
+            out["no_offenses"] = int(summary_resp.get("noOffenses") or 0)
+            out["sealed"] = int(summary_resp.get("sealed") or 0)
+            out["removal_order"] = int(summary_resp.get("removalOrder") or 0)
+            out["epo"] = int(summary_resp.get("epo") or 0)
+            out["officers"] = summary_resp.get("officers") or []
     except Exception as e:
         out["error"] = f"summary:{e}"
 
     try:
-        k = requests.get(SDEO_TOP_KPIS, params=params,
+        top_kpis_resp = requests.get(SDEO_TOP_KPIS, params=params,
                          headers=_HEADERS, timeout=_API_TIMEOUT).json()
-        if isinstance(k, dict):
-            out["fine_imposed"] = float(k.get("totalFineImposed") or 0)
-            out["fine_recovered"] = float(k.get("totalFineRecovered") or 0)
-            out["unpaid_fine"] = float(k.get("unpaidFineAmount") or 0)
     except Exception as e:
         out["error"] = (out["error"] or "") + f" kpi:{e}"
 
     try:
-        cs = requests.get(SDEO_CHALLAN_STATUS_BREAKDOWN, params=params,
+        status_resp = requests.get(SDEO_CHALLAN_STATUS_BREAKDOWN, params=params,
                           headers=_HEADERS, timeout=_API_TIMEOUT).json()
-        if isinstance(cs, dict):
-            out["paid_count"] = int(cs.get("paidCount") or 0)
-            out["unpaid_count"] = int(cs.get("unpaidCount") or 0)
     except Exception as e:
         out["error"] = (out["error"] or "") + f" cs:{e}"
 
     # PCM totals are all-time, not date-filtered. Skip params.
     try:
-        pdc = requests.get(PCM_DASHBOARD_COUNTS,
+        pcm_resp = requests.get(PCM_DASHBOARD_COUNTS,
                            params={"tehsilId": tehsil_id},
                            headers=_HEADERS, timeout=_API_TIMEOUT).json()
-        if isinstance(pdc, dict):
-            out["arrest_total"] = int(pdc.get("totalArrest") or 0)
-            out["pcm_total"] = int(pdc.get("totalPCM") or 0)
+        if isinstance(pcm_resp, dict):
+            out["arrest_total"] = int(pcm_resp.get("totalArrest") or 0)
+            out["pcm_total"] = int(pcm_resp.get("totalPCM") or 0)
     except Exception as e:
         out["error"] = (out["error"] or "") + f" pcm:{e}"
+
+    # ── Canonical financial merge (Phase-41) ──
+    try:
+        from pera_financial_sources import normalize_sdeo_financial_metrics
+        fin = normalize_sdeo_financial_metrics(
+            summary_resp=summary_resp, top_kpis_resp=top_kpis_resp,
+            status_resp=status_resp, pcm_resp=pcm_resp,
+            date_ranged=True,
+        )
+        for k in ("fine_imposed", "fine_recovered", "paid_amount",
+                  "outstanding_amount", "partially_paid_amount",
+                  "all_time_total_fine", "all_time_paid_amount",
+                  "all_time_unpaid_amount"):
+            v = fin.get(k)
+            if v is not None:
+                out[k] = float(v)
+        for k in ("paid_challans", "unpaid_challans", "partially_paid_challans"):
+            v = fin.get(k)
+            if v is not None:
+                out[k] = int(v)
+    except Exception as e:
+        log.debug("financial normalizer skipped: %s", e)
 
     return out
 
@@ -1624,8 +2360,14 @@ def _aggregate_tehsil_metrics(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
     agg = {
         "total_actions": 0, "challans": 0, "firs": 0, "warnings": 0,
         "no_offenses": 0, "sealed": 0, "removal_order": 0, "epo": 0,
-        "fine_imposed": 0.0, "fine_recovered": 0.0, "unpaid_fine": 0.0,
+        "fine_imposed": 0.0, "fine_recovered": 0.0,
+        "outstanding_amount": 0.0, "paid_amount": 0.0,
+        "partially_paid_amount": 0.0,
+        # Legacy keys kept so older callers don't break:
+        "unpaid_fine": 0.0,
         "paid_count": 0, "unpaid_count": 0,
+        "paid_challans": 0, "unpaid_challans": 0,
+        "partially_paid_challans": 0,
         "arrest_total": 0, "pcm_total": 0,
         "tehsils_covered": 0, "tehsils_failed": 0,
         "tehsils_with_data": [],
@@ -1639,9 +2381,13 @@ def _aggregate_tehsil_metrics(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
         for k in ("total_actions", "challans", "firs", "warnings",
                   "no_offenses", "sealed", "removal_order", "epo",
                   "paid_count", "unpaid_count",
+                  "paid_challans", "unpaid_challans",
+                  "partially_paid_challans",
                   "arrest_total", "pcm_total"):
             agg[k] += int(r.get(k) or 0)
-        for k in ("fine_imposed", "fine_recovered", "unpaid_fine"):
+        for k in ("fine_imposed", "fine_recovered",
+                  "outstanding_amount", "paid_amount",
+                  "partially_paid_amount", "unpaid_fine"):
             agg[k] += float(r.get(k) or 0)
         if (r.get("total_actions") or 0) > 0:
             agg["tehsils_with_data"].append(r["tehsil_name"])
@@ -1668,80 +2414,78 @@ def _format_aggregate_context(
     start_date: date, end_date: date,
     tehsil_count: int,
 ) -> str:
-    ctx = f"Inspection Performance — {level.title()}: {name}\n"
-    ctx += f"Date Range: {start_date} to {end_date}\n"
-    ctx += f"Aggregation: sum of {agg['tehsils_covered']}/{tehsil_count} tehsils"
-    if agg["tehsils_failed"]:
-        ctx += f" ({agg['tehsils_failed']} tehsils errored)"
-    ctx += "\n" + "=" * 50 + "\n"
+    """Render an aggregated district/division performance summary using
+    the same `render_dashboard_summary` machinery as tehsil-level so
+    the markdown output is consistent across hierarchy levels.
+    """
+    # Map aggregator keys → render_dashboard_summary keys.
+    metrics = {
+        "total_inspections":   agg.get("total_actions", 0),
+        "total_challans":      agg.get("challans", 0),
+        "fine_amount":         agg.get("fine_imposed") or None,
+        "sealed":              agg.get("sealed", 0),
+        # Arrest is all-time per PCM endpoint — keep out of primary table.
+        "arrest":              None,
+        "enforcer":            None,
+        "warnings":            agg.get("warnings", 0),
+        "paid_challans":       agg.get("paid_challans") or agg.get("paid_count") or 0,
+        "unpaid_challans":     agg.get("unpaid_challans") or agg.get("unpaid_count") or 0,
+        "paid_amount":         agg.get("paid_amount") or None,
+        "outstanding_amount":  (
+            agg.get("outstanding_amount") or agg.get("unpaid_fine") or None
+        ),
+        "fine_recovered":      agg.get("fine_recovered") or None,
+        "firs":                agg.get("firs", 0),
+        "no_offenses":         agg.get("no_offenses", 0),
+        "removal_orders":      agg.get("removal_order", 0),
+        "epo":                 agg.get("epo", 0),
+    }
 
-    # Audit-trail FIRST so the LLM can't drop it during summarisation.
-    # Higher-authority users repeatedly cross-check chatbot totals against
-    # dashboard tiles per tehsil — without this table they have no way to
-    # spot which tehsil disagrees.
+    head = render_dashboard_summary(
+        metrics,
+        location_name=f"{level.title()}: {name}",
+        date_range=(start_date, end_date),
+        source="SDEO Dashboard (Live, aggregated across tehsils)",
+        officer_rows=agg.get("officers"),
+    )
+
+    head += (
+        f"\n_Aggregation: sum of {agg.get('tehsils_covered', 0)}"
+        f"/{tehsil_count} tehsils"
+    )
+    if agg.get("tehsils_failed"):
+        head += f" — {agg['tehsils_failed']} tehsils errored"
+    head += "._\n"
+
+    # All-time PCM footer
+    if agg.get("arrest_total") or agg.get("pcm_total"):
+        head += "\n#### All-time indicators (PCM endpoint, not date-filtered)\n\n"
+        if agg.get("arrest_total"):
+            head += f"- Arrest cases: {int(agg['arrest_total']):,}\n"
+        if agg.get("pcm_total"):
+            head += f"- PCM: {int(agg['pcm_total']):,}\n"
+
+    # Per-tehsil audit table (kept for dashboard parity verification)
     per_tehsil = sorted(
         list(agg.get("_rows", []) or []),
         key=lambda r: -(r.get("total_actions") or 0),
     )
     if per_tehsil:
-        ctx += "Per-Tehsil Breakdown (REQUIRED in answer):\n"
-        ctx += f"{'Tehsil':<25s} {'Insp':>6s} {'Chal':>5s} {'War':>4s} {'Sld':>3s} {'Fine(Rs)':>10s}\n"
+        head += "\n#### Per-Tehsil Breakdown\n\n"
+        head += "| Tehsil | Inspections | Challans | Warnings | Sealed | Fine Imposed |\n"
+        head += "| --- | ---: | ---: | ---: | ---: | ---: |\n"
         for r in per_tehsil:
             tag = " [ERR]" if r.get("error") else ""
-            ctx += (
-                f"{r['tehsil_name']:<25s} "
-                f"{r['total_actions']:>6,} "
-                f"{r['challans']:>5,} "
-                f"{r['warnings']:>4,} "
-                f"{r['sealed']:>3,} "
-                f"{int(r['fine_imposed']):>10,}{tag}\n"
+            head += (
+                f"| {r['tehsil_name']}{tag} "
+                f"| {r['total_actions']:,} "
+                f"| {r['challans']:,} "
+                f"| {r['warnings']:,} "
+                f"| {r['sealed']:,} "
+                f"| Rs. {int(r.get('fine_imposed') or 0):,} |\n"
             )
-        ctx += "-" * 50 + "\n"
 
-    ctx += f"Total Inspections/Actions: {agg['total_actions']:,}\n"
-    ctx += f"Challans: {agg['challans']:,}\n"
-    ctx += f"FIRs: {agg['firs']:,}\n"
-    ctx += f"Warnings: {agg['warnings']:,}\n"
-    ctx += f"No Offenses: {agg['no_offenses']:,}\n"
-    ctx += f"Sealed: {agg['sealed']:,}\n"
-    if agg["removal_order"]:
-        ctx += f"Removal Orders: {agg['removal_order']:,}\n"
-    if agg["epo"]:
-        ctx += f"EPO: {agg['epo']:,}\n"
-
-    ctx += f"Fine Amount (imposed): Rs. {int(agg['fine_imposed']):,}\n"
-    ctx += f"Fine Recovered (paid): Rs. {int(agg['fine_recovered']):,}\n"
-    ctx += f"Fine Outstanding (unpaid): Rs. {int(agg['unpaid_fine']):,}\n"
-    ctx += f"Paid Challans: {agg['paid_count']:,}\n"
-    ctx += f"Unpaid Challans: {agg['unpaid_count']:,}\n"
-    ctx += f"Arrest Cases (all-time): {agg['arrest_total']:,}\n"
-    ctx += f"PCM (all-time): {agg['pcm_total']:,}\n"
-
-    if agg["officers"]:
-        ctx += f"\nOfficer Breakdown ({len(agg['officers'])} officers, summed across tehsils):\n"
-        for o in agg["officers"][:25]:
-            parts = [
-                f"{o['inspection']:,} inspections",
-                f"{o['challan']:,} challans",
-                f"{o['warning']:,} warnings",
-            ]
-            if o["fir"]:
-                parts.append(f"{o['fir']} FIRs")
-            if o["sealed"]:
-                parts.append(f"{o['sealed']} sealed")
-            if o["removalOrder"]:
-                parts.append(f"{o['removalOrder']} removal orders")
-            if o["epo"]:
-                parts.append(f"{o['epo']} EPOs")
-            ctx += f"  {o['officerName']}: {', '.join(parts)}\n"
-
-
-    ctx += (
-        "\n(Counts and fines aggregated live from per-tehsil SDEO endpoints "
-        "for the requested date range. Arrest and PCM totals are all-time "
-        "figures from the PCM dashboard endpoint.)\n"
-    )
-    return ctx
+    return head
 
 
 def _query_district_live(
@@ -1840,6 +2584,7 @@ def _fanout_aggregate(
 def _query_insp_officer(
     db, officer_name: str,
     start_date: Optional[date], end_date: Optional[date],
+    question: str = "",
 ) -> Dict[str, Any]:
     """
     Query inspection data for a specific officer.
@@ -1924,6 +2669,7 @@ def _query_insp_officer(
             officer_name, officer_id, tehsil_id,
             tehsil_name, district_name, division_name,
             start_date, end_date, source_id,
+            question=question,
         )
 
     # ── No date filter → use stored data ──
@@ -2054,8 +2800,14 @@ def _query_officer_live(
     officer_name: str, officer_id: str, tehsil_id: int,
     tehsil_name: str, district_name: str, division_name: str,
     start_date: date, end_date: date, source_id: str,
+    question: str = "",
 ) -> Dict[str, Any]:
-    """Call PCM officer-inspections API live for a specific date range."""
+    """Call PCM officer-inspections API live for a specific date range.
+
+    Phase-44: individual inspection records are only emitted when the
+    user explicitly asks ("records", "details", "list", "cases").
+    Default summary queries get just Activity + Financials tables.
+    """
     try:
         resp = requests.get(
             PCM_OFFICER_INSPECTIONS,
@@ -2090,24 +2842,83 @@ def _query_officer_live(
     no_offence = sum(1 for r in records if _is_true(r.get("noOffense")))
     arrests = sum(1 for r in records if _is_true(r.get("arrestCase")))
     confiscated = sum(1 for r in records if _is_true(r.get("confiscated")))
-    total_fine = sum(r.get("fineAmount", 0) or 0 for r in records)
+    firs = sum(1 for r in records if _is_true(r.get("firCase")))
+    sealed = sum(1 for r in records if _is_true(r.get("sealed")))
+    epo_count = sum(1 for r in records if _is_true(r.get("epo")))
+    rem_orders = sum(1 for r in records if _is_true(r.get("removalOrder")))
+    fine_imposed = sum(float(r.get("fineAmount", 0) or 0) for r in records)
+    # paidAmount per record may or may not be present in PCM response.
+    fine_recovered_raw = [
+        r.get("paidAmount") for r in records
+        if r.get("paidAmount") not in (None, "")
+    ]
+    fine_recovered = sum(float(v or 0) for v in fine_recovered_raw) if fine_recovered_raw else None
+    outstanding = (
+        fine_imposed - fine_recovered
+        if fine_recovered is not None and fine_imposed >= fine_recovered
+        else None
+    )
+    recovery_pct = (
+        round(fine_recovered / fine_imposed * 100, 2)
+        if fine_recovered is not None and fine_imposed > 0
+        else None
+    )
 
-    context = f"Inspection Data for {officer_name}\n"
-    context += f"Date Range: {start_date} to {end_date}\n"
-    context += f"Location: {tehsil_name}, {district_name}, {division_name}\n"
-    context += "=" * 50 + "\n"
-    context += f"Total Inspections: {total:,}\n"
-    context += f"Challans Issued: {challans:,}\n"
-    context += f"Warnings Issued: {warnings:,}\n"
-    context += f"No Offence Found: {no_offence:,}\n"
-    context += f"Arrest Cases: {arrests:,}\n"
-    context += f"Confiscated: {confiscated:,}\n"
-    context += f"Total Fine Amount: Rs. {total_fine:,.0f}\n"
+    # Markdown report
+    context = f"### Officer Performance Summary — {officer_name}\n\n"
+    context += f"**Date range:** {start_date} to {end_date}  \n"
+    context += f"**Location:** {tehsil_name}, {district_name}, {division_name}  \n"
+    context += "**Source:** PCM Officer Inspections (Live)\n\n"
+    context += "#### Activity\n\n"
+    context += "| Metric | Value |\n| --- | ---: |\n"
+    context += f"| Total Inspections / Records | {total:,} |\n"
+    context += f"| Challans Issued | {challans:,} |\n"
+    context += f"| Warnings Issued | {warnings:,} |\n"
+    context += f"| No Offense | {no_offence:,} |\n"
+    context += f"| FIRs Registered | {firs:,} |\n"
+    context += f"| Sealed Premises | {sealed:,} |\n"
+    if epo_count:
+        context += f"| EPO | {epo_count:,} |\n"
+    if rem_orders:
+        context += f"| Removal Orders | {rem_orders:,} |\n"
+    if arrests:
+        context += f"| Arrest Cases | {arrests:,} |\n"
+    if confiscated:
+        context += f"| Confiscated | {confiscated:,} |\n"
 
-    # Include individual record details (up to 100 for context size)
-    if records:
-        context += f"\nIndividual Inspection Records ({min(len(records), 100)} of {len(records)}):\n"
-        for i, r in enumerate(records[:100]):
+    context += "\n#### Financials\n\n"
+    context += "| Metric | Value |\n| --- | ---: |\n"
+    context += f"| Officer Fine Imposed | Rs. {int(fine_imposed):,} |\n"
+    if fine_recovered is not None:
+        context += f"| Officer Fine Recovered | Rs. {int(fine_recovered):,} |\n"
+        if outstanding is not None:
+            context += f"| Outstanding Amount | Rs. {int(outstanding):,} |\n"
+        if recovery_pct is not None:
+            context += f"| Paid Recovery % | {recovery_pct}% |\n"
+    else:
+        context += (
+            "\n_Note: Officer Fine Recovered is not available from this "
+            "endpoint; only Fine Imposed is reported._\n"
+        )
+
+    # Phase-44: emit individual records ONLY when the user asked for
+    # them. Default summary stays clean (Activity + Financials tables).
+    show_records = False
+    record_limit = 10
+    if question:
+        try:
+            from pera_source_policy import user_wants_records, extract_limit
+            show_records = user_wants_records(question)
+            if show_records:
+                record_limit = extract_limit(question, default=10, max_limit=25)
+        except Exception:
+            pass
+    if records and show_records:
+        context += (
+            f"\n#### Sample Inspection Records — showing "
+            f"{min(len(records), record_limit)} of {len(records):,}\n\n"
+        )
+        for i, r in enumerate(records[:record_limit]):
             outcome = []
             if _is_true(r.get("challanCase")):
                 outcome.append("Challan")
@@ -2147,6 +2958,9 @@ def _query_officer_live(
         "source_id": source_id,
         "records": records,
         "formatted_context": context,
+        "deterministic_answer": context,
+        "structured_payload": context,
+        "evidence_type": "officer_table",
     }
 
 

@@ -135,3 +135,28 @@ def test_detect_unparsed_date_expression():
     assert detect_unparsed_date_expression(
         "from 33th something to 99 nowhere"
     ) is True or False  # heuristic — accept either; the API exists
+
+
+# ── OA-side delegation sanity ────────────────────────────────
+def test_oa_extract_delegates_to_pera_dates():
+    """operational_activity_lookup._extract_date_range_for_oa must call
+    pera_dates first. We assert the canonical FY parsing works through
+    the OA helper."""
+    from operational_activity_lookup import _extract_date_range_for_oa
+    s, e = _extract_date_range_for_oa("operational activity FY 2025-26")
+    assert s == date(2025, 7, 1)
+    assert e == date(2026, 6, 30)
+
+
+def test_oa_extract_quarter():
+    from operational_activity_lookup import _extract_date_range_for_oa
+    s, e = _extract_date_range_for_oa("operational activity Q1 2026")
+    assert s == date(2026, 1, 1)
+    assert e == date(2026, 3, 31)
+
+
+def test_oa_extract_last_week():
+    from operational_activity_lookup import _extract_date_range_for_oa
+    s, e = _extract_date_range_for_oa("operational activity last week")
+    assert s is not None and e is not None
+    assert (e - s).days == 6

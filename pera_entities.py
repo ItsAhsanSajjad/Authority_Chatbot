@@ -49,6 +49,29 @@ _DIVISION_ALIASES = {
     "gujranwala including gujrat": "Gujranwala (Including Gujrat)",
 }
 
+# District-level aliases. Map normalised alias → canonical DB form.
+# Kept short — only the variants we have seen in the wild. Districts
+# whose canonical form is unambiguous (e.g. plain "Lahore", "Multan")
+# don't need an entry; substring matching catches them.
+_DISTRICT_ALIASES = {
+    "dera ghazi khan": "D.G. Khan",   # district share name with division
+    "dg khan": "D.G. Khan",
+    "d g khan": "D.G. Khan",
+    "d.g khan": "D.G. Khan",
+    "d.g. khan": "D.G. Khan",
+}
+
+# Tehsil-level aliases. Map alias → canonical DB form. Conservative
+# coverage — we only encode aliases for tehsils whose canonical name
+# carries a redundant suffix the user routinely omits (Town/Cantt/City).
+_TEHSIL_ALIASES = {
+    "allama iqbal": "Allama Iqbal Town",
+    "iqbal town": "Allama Iqbal Town",
+    "lahore city": "Lahore City",
+    "lahore cantonment": "Lahore Cantt",
+    "lahore cantt": "Lahore Cantt",
+}
+
 # Officer-name suffix tokens that should NOT count as canonical name
 _OFFICER_NAME_SUFFIXES = re.compile(
     r"\s+(EO[-_]?\d+|EO\s*\d+|\d{2,4})$", re.I
@@ -216,6 +239,42 @@ def canonical_division_name(text: str) -> Optional[str]:
     q_norm = normalize_entity_text(text)
     hit = _alias_match(q_norm)
     return hit.canonical_name if hit else None
+
+
+def canonical_district_name(text: str,
+                            candidates: Optional[Iterable[str]] = None
+                            ) -> Optional[str]:
+    """Resolve a district alias to its canonical DB form. Returns None
+    when no alias hit. If `candidates` is supplied, the canonical name
+    is only returned when it is also in the candidate list (guards
+    against returning a name the DB does not actually have).
+    """
+    if not text:
+        return None
+    q_norm = normalize_entity_text(text)
+    for alias, canonical in _DISTRICT_ALIASES.items():
+        if re.search(rf"\b{re.escape(alias)}\b", q_norm):
+            if candidates is None or canonical in candidates:
+                return canonical
+    return None
+
+
+def canonical_tehsil_name(text: str,
+                          candidates: Optional[Iterable[str]] = None
+                          ) -> Optional[str]:
+    """Resolve a tehsil alias to its canonical DB form. Returns None
+    when no alias hit. Guarded by `candidates` like the district variant.
+    """
+    if not text:
+        return None
+    q_norm = normalize_entity_text(text)
+    # Sort by alias length descending so "lahore cantt" beats "lahore"
+    for alias in sorted(_TEHSIL_ALIASES.keys(), key=len, reverse=True):
+        if re.search(rf"\b{re.escape(alias)}\b", q_norm):
+            canonical = _TEHSIL_ALIASES[alias]
+            if candidates is None or canonical in candidates:
+                return canonical
+    return None
 
 
 # ── Officer guard ───────────────────────────────────────────

@@ -209,12 +209,27 @@ def merge_followup(current_question: str, last_turn: LastTurn) -> LastTurn:
       "and by challans?"     → metric=challans
       "ascending order"      → rank_order=asc
       "and unpaid?"          → status_filter=unpaid
-      "for last month?"      → caller must pass the parsed date_start/end
+      "for last month?"      → date_start/date_end overwritten via
+                               pera_dates parser; entity/metric kept.
+      "for Q1 2026?"         → date_start/date_end becomes
+                               2026-01-01 .. 2026-03-31.
     """
     out = LastTurn(**asdict(last_turn))  # shallow copy
 
     if not current_question:
         return out
+
+    # Date-only follow-up: if the current question carries a parseable
+    # date range, overwrite the prior turn's dates and let the rest of
+    # the merge proceed as normal.
+    try:
+        from pera_dates import parse_date_range
+        new_dr = parse_date_range(current_question)
+        if new_dr is not None:
+            out.date_start = new_dr.start.isoformat()
+            out.date_end = new_dr.end.isoformat()
+    except Exception:
+        pass
 
     # Status filter
     status = _detect_status_change(current_question)

@@ -103,6 +103,37 @@ def test_followup_document_domain_untouched():
     assert out.domain == "document"
 
 
+# ── Date-only follow-up replacement ─────────────────────────
+def test_followup_date_replacement_for_quarter():
+    """Turn 1: top tehsils by FIRs in Lahore division.
+    Turn 2: 'for Q1 2026' — date_start/end should become Jan 1 - Mar 31."""
+    lt = parse_intent_to_last_turn("insp_top:firs:tehsil:desc")
+    lt.entity_value = "Lahore"
+    lt.entity_level = "division"
+    out = merge_followup("for Q1 2026", lt)
+    assert out.date_start == "2026-01-01"
+    assert out.date_end == "2026-03-31"
+    assert out.entity_value == "Lahore"
+    assert out.metric == "firs"
+
+
+def test_followup_date_replacement_for_relative():
+    """Turn 1: inspection summary of Lahore district.
+    Turn 2: 'for last month' — dates change, entity preserved.
+    """
+    lt = LastTurn(
+        domain="inspection", intent="insp_district:Lahore",
+        entity_level="district", entity_value="Lahore",
+    )
+    out = merge_followup("for last month", lt)
+    # date_start / date_end populated
+    assert out.date_start is not None
+    assert out.date_end is not None
+    # entity preserved
+    assert out.entity_value == "Lahore"
+    assert out.entity_level == "district"
+
+
 # ── last_turn_to_intent ──────────────────────────────────────
 def test_re_encode_top():
     lt = LastTurn(

@@ -303,7 +303,19 @@ def _detect_officer_name(question: str) -> Optional[str]:
 
 # ── Date range extraction (reuse from challan_lookup) ────────
 def _extract_date_range_for_oa(question: str) -> Tuple[Optional[date], Optional[date]]:
-    """Extract date range from question, reusing challan_lookup's date parsing."""
+    """Extract date range from question.
+
+    Hardening fix: call pera_dates directly first so OA matches the same
+    canonical date semantics inspection/challan use. Falls back to the
+    legacy challan parser only when the canonical parser returns None.
+    """
+    try:
+        from pera_dates import parse_date_range
+        dr = parse_date_range(question)
+        if dr is not None:
+            return (dr.start, dr.end)
+    except Exception:
+        pass
     try:
         from challan_lookup import _extract_date_range
         result = _extract_date_range(question)

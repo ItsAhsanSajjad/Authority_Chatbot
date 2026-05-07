@@ -416,6 +416,28 @@ def format_date_range(dr: DateRange) -> str:
     return f"{dr.start.isoformat()} to {dr.end.isoformat()}"
 
 
+def to_sdeo_start_end(
+    start: date, end: date,
+) -> "tuple[str, str]":
+    """Format a date range for SDEO dashboard live calls.
+
+    Dashboard date-picker default is "From 12:00 AM" / "To 11:59 PM".
+    SDEO endpoints honour datetime strings with full-day end-of-day
+    semantics. Sending date-only (`2026-04-20`) is interpreted as
+    midnight = exclusive of the final day, so chatbot totals lag the
+    dashboard tile by one day.
+
+    This helper returns:
+        ("2026-04-01T00:00:00", "2026-04-20T23:59:59")
+
+    so that an inclusive [start, end] range produces the same counts
+    as the dashboard.
+    """
+    s = f"{start.isoformat()}T00:00:00"
+    e = f"{end.isoformat()}T23:59:59"
+    return s, e
+
+
 def detect_unparsed_date_expression(text: str) -> bool:
     """True if `text` contains a date-looking expression we did NOT manage
     to parse. Lets callers detect "user typed a date but parser failed"

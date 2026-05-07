@@ -51,6 +51,86 @@ class NumericValidationResult:
     unsupported_numbers: List[str] = field(default_factory=list)
     mismatched_claims: List[str] = field(default_factory=list)
     reason: str = ""
+    label_mismatches: List[str] = field(default_factory=list)
+
+
+# ── Label-aware validation (Phase-41) ────────────────────────
+_TABLE_ROW_RE = re.compile(
+    r"^\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|\s*$",
+    re.MULTILINE,
+)
+
+
+def _normalize_label(label: str) -> str:
+    s = (label or "").strip().lower()
+    s = re.sub(r"[^a-z0-9% ]+", "", s)
+    s = re.sub(r"\s+", " ", s).strip()
+    # Canonical aliases — keep narrow, only the cases that diverge.
+    aliases = {
+        "fine amount": "fine imposed",
+        "fine amount imposed": "fine imposed",
+        "total fine amount": "fine imposed",
+        "total fine": "fine imposed",
+        "imposed fine": "fine imposed",
+        "amount paid": "paid amount",
+        "outstanding fine": "outstanding amount",
+        "unpaid amount": "outstanding amount",
+        "fine outstanding": "outstanding amount",
+        "fine recovered paid": "fine recovered",
+    }
+    return aliases.get(s, s)
+
+
+def extract_markdown_label_value_pairs(text: str) -> List[tuple]:
+    """Parse `| Label | Value |` rows. Skips header (`| KPI | Value |`)
+    and separator (`| --- | ---: |`) rows.
+    """
+    out: List[tuple] = []
+    for m in _TABLE_ROW_RE.finditer(text or ""):
+        label = m.group(1).strip()
+        value = m.group(2).strip()
+        if not label or not value:
+            continue
+        if set(label.replace("-", "").strip()) <= {":", " "}:
+            continue
+        if label.lower() in {"kpi", "metric", "value"}:
+            continue
+        if value.lower() in {"value"}:
+            continue
+        # skip pure separator rows
+        if re.fullmatch(r":?-+:?", label) or re.fullmatch(r":?-+:?", value):
+            continue
+        out.append((_normalize_label(label), value))
+    return out
+
+
+def validate_label_value_pairs(answer: str, payload_text: str) -> List[str]:
+    """Return a list of mismatch descriptions: any (label, value) pair
+    in the answer whose value differs from the corresponding payload
+    pair, or whose label is missing from the payload entirely.
+
+    Empty list = all pairs match.
+    """
+    answer_pairs = extract_markdown_label_value_pairs(answer)
+    payload_pairs = extract_markdown_label_value_pairs(payload_text)
+    if not answer_pairs or not payload_pairs:
+        return []
+
+    payload_map = {lbl: val for lbl, val in payload_pairs}
+    mismatches: List[str] = []
+    for lbl, ans_val in answer_pairs:
+        # date / date-range cells — skip
+        if re.search(r"\d{4}-\d{2}-\d{2}", ans_val):
+            continue
+        if lbl not in payload_map:
+            continue   # label not in payload → not a swap, just unrelated text
+        payload_val = payload_map[lbl]
+        # Compare via _normalize so "Rs. 1,234" matches "1234"
+        if _normalize(ans_val) != _normalize(payload_val):
+            mismatches.append(
+                f"label={lbl!r} answer={ans_val!r} payload={payload_val!r}"
+            )
+    return mismatches
 
 
 def _normalize(num: str) -> str:
@@ -128,13 +208,18 @@ def validate_numeric_answer(
             continue
         unsupported.append(raw)
 
-    if unsupported and not permissive:
+    # Label-aware second pass: catches Fine Imposed/Paid Amount swaps.
+    label_mismatches = validate_label_value_pairs(answer, payload_text)
+
+    if (unsupported or label_mismatches) and not permissive:
         return NumericValidationResult(
             ok=False,
             unsupported_numbers=unsupported[:10],
+            label_mismatches=label_mismatches[:10],
             reason=(
-                f"{len(unsupported)} numeric token(s) in the answer not found "
-                f"in structured payload (evidence_type={evidence_type or 'n/a'})"
+                f"{len(unsupported)} unsupported number(s), "
+                f"{len(label_mismatches)} label/value mismatch(es) "
+                f"(evidence_type={evidence_type or 'n/a'})"
             ),
         )
 

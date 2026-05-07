@@ -994,6 +994,63 @@ _MIGRATIONS: List[Tuple[int, str, List[str]]] = [
         "CREATE INDEX IF NOT EXISTS idx_oir_dates       ON officer_inspection_record (from_date, to_date)",
     ]),
 
+    # ──────────────────────────────────────────────────────────
+    # 38. SDEO dashboard field expansion (additive, idempotent)
+    # ──────────────────────────────────────────────────────────
+    # Captures KPIs introduced after the original ingestion was
+    # written. Fields:
+    #   - removal_order, epo  → from /sdeo-dashboard/inspections-summary
+    #   - fine_imposed, fine_recovered, fine_outstanding
+    #     → from /sdeo-dashboard/top-kpis
+    #   - paid_count, unpaid_count, partially_paid_count,
+    #     paid_amount, unpaid_amount, partially_paid_amount
+    #     → from /sdeo-dashboard/challan-status-breakdown
+    #   - arrest_count, pcm_count
+    #     → from /Pcm/dashboard-counts (all-time, not date-filtered)
+    #   - extra_metrics JSONB  → unknown future fields go here
+    # All NULL-able and additive. No drops, no renames.
+    (38, "Add SDEO dashboard expansion KPI columns", [
+        # inspection_performance — main rollup table
+        "ALTER TABLE inspection_performance ADD COLUMN IF NOT EXISTS removal_order INTEGER",
+        "ALTER TABLE inspection_performance ADD COLUMN IF NOT EXISTS epo INTEGER",
+        "ALTER TABLE inspection_performance ADD COLUMN IF NOT EXISTS arrest_count INTEGER",
+        "ALTER TABLE inspection_performance ADD COLUMN IF NOT EXISTS pcm_count INTEGER",
+        "ALTER TABLE inspection_performance ADD COLUMN IF NOT EXISTS fine_imposed NUMERIC(18,2)",
+        "ALTER TABLE inspection_performance ADD COLUMN IF NOT EXISTS fine_recovered NUMERIC(18,2)",
+        "ALTER TABLE inspection_performance ADD COLUMN IF NOT EXISTS fine_outstanding NUMERIC(18,2)",
+        "ALTER TABLE inspection_performance ADD COLUMN IF NOT EXISTS paid_count INTEGER",
+        "ALTER TABLE inspection_performance ADD COLUMN IF NOT EXISTS unpaid_count INTEGER",
+        "ALTER TABLE inspection_performance ADD COLUMN IF NOT EXISTS partially_paid_count INTEGER",
+        "ALTER TABLE inspection_performance ADD COLUMN IF NOT EXISTS paid_amount NUMERIC(18,2)",
+        "ALTER TABLE inspection_performance ADD COLUMN IF NOT EXISTS unpaid_amount NUMERIC(18,2)",
+        "ALTER TABLE inspection_performance ADD COLUMN IF NOT EXISTS partially_paid_amount NUMERIC(18,2)",
+        "ALTER TABLE inspection_performance ADD COLUMN IF NOT EXISTS source_updated_at TIMESTAMPTZ",
+        "ALTER TABLE inspection_performance ADD COLUMN IF NOT EXISTS extra_metrics JSONB",
+
+        # inspection_officer_summary — per-officer rollup
+        "ALTER TABLE inspection_officer_summary ADD COLUMN IF NOT EXISTS officer_removal_orders INTEGER",
+        "ALTER TABLE inspection_officer_summary ADD COLUMN IF NOT EXISTS officer_epo INTEGER",
+        "ALTER TABLE inspection_officer_summary ADD COLUMN IF NOT EXISTS officer_fine_imposed NUMERIC(18,2)",
+        "ALTER TABLE inspection_officer_summary ADD COLUMN IF NOT EXISTS officer_fine_recovered NUMERIC(18,2)",
+        "ALTER TABLE inspection_officer_summary ADD COLUMN IF NOT EXISTS extra_metrics JSONB",
+
+        # officer_inspection_detail — per-officer aggregates from PCM
+        "ALTER TABLE officer_inspection_detail ADD COLUMN IF NOT EXISTS removal_order INTEGER",
+        "ALTER TABLE officer_inspection_detail ADD COLUMN IF NOT EXISTS epo INTEGER",
+        "ALTER TABLE officer_inspection_detail ADD COLUMN IF NOT EXISTS warning_count INTEGER",
+        "ALTER TABLE officer_inspection_detail ADD COLUMN IF NOT EXISTS no_offense_count INTEGER",
+        "ALTER TABLE officer_inspection_detail ADD COLUMN IF NOT EXISTS paid_amount NUMERIC(18,2)",
+        "ALTER TABLE officer_inspection_detail ADD COLUMN IF NOT EXISTS unpaid_amount NUMERIC(18,2)",
+        "ALTER TABLE officer_inspection_detail ADD COLUMN IF NOT EXISTS extra_metrics JSONB",
+
+        # operational_activity — keep dynamic future-fields safe
+        "ALTER TABLE operational_activity ADD COLUMN IF NOT EXISTS extra_metrics JSONB",
+
+        # Helpful covering indexes (idempotent)
+        "CREATE INDEX IF NOT EXISTS idx_insp_perf_source_updated ON inspection_performance(source_updated_at)",
+        "CREATE INDEX IF NOT EXISTS idx_insp_perf_arrest_pcm ON inspection_performance(arrest_count, pcm_count)",
+    ]),
+
 ]
 
 

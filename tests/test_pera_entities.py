@@ -105,3 +105,40 @@ def test_unknown_location_returns_none():
 def test_empty_input():
     assert resolve_location("", level=None) is None
     assert resolve_officer("", candidates=["A B"]) is None
+
+
+# ── District alias resolver ──────────────────────────────────
+def test_district_alias_dera_ghazi_khan():
+    from pera_entities import canonical_district_name
+    assert canonical_district_name("Dera Ghazi Khan district report") == "D.G. Khan"
+    assert canonical_district_name("dg khan district challans") == "D.G. Khan"
+
+
+def test_district_alias_with_candidates_filter():
+    from pera_entities import canonical_district_name
+    # Only return canonical when candidate list contains it
+    assert canonical_district_name(
+        "DG Khan district report",
+        candidates=["D.G. Khan", "Lahore"],
+    ) == "D.G. Khan"
+    assert canonical_district_name(
+        "DG Khan district report",
+        candidates=["Faisalabad"],   # "D.G. Khan" not in candidates
+    ) is None
+
+
+# ── Tehsil alias resolver ────────────────────────────────────
+def test_tehsil_alias_allama_iqbal():
+    from pera_entities import canonical_tehsil_name
+    assert canonical_tehsil_name("allama iqbal sealed inspections") == "Allama Iqbal Town"
+    assert canonical_tehsil_name("iqbal town inspection summary") == "Allama Iqbal Town"
+
+
+def test_tehsil_alias_lahore_cantt():
+    from pera_entities import canonical_tehsil_name
+    assert canonical_tehsil_name("lahore cantonment inspections") == "Lahore Cantt"
+
+
+def test_tehsil_alias_no_match():
+    from pera_entities import canonical_tehsil_name
+    assert canonical_tehsil_name("Multan division inspections") is None
