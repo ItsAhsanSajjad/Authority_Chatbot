@@ -7,10 +7,10 @@
 export type AnswerSourceMode = "documents" | "stored_api" | "both" | "live_api";
 
 export const SOURCE_MODE_OPTIONS: { value: AnswerSourceMode; label: string; desc: string }[] = [
-  { value: "documents", label: "Documents", desc: "Regulatory documents only" },
-  { value: "stored_api", label: "Stored API", desc: "Indexed API snapshots" },
-  { value: "both", label: "Both", desc: "Documents + API data" },
-  { value: "live_api", label: "Live API", desc: "Real-time API queries" },
+  { value: "documents", label: "Policy Documents", desc: "Regulatory documents only" },
+  { value: "stored_api", label: "Operational Records", desc: "Indexed API snapshots" },
+  { value: "both", label: "Integrated Search", desc: "Documents + API data" },
+  { value: "live_api", label: "Live Intelligence", desc: "Real-time API queries" },
 ];
 
 // ─── Domain Models ───
