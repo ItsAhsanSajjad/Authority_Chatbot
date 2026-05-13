@@ -279,6 +279,13 @@ _RANK_METRIC_MAP = [
         r"un[\s-]?recovered|baki|jo\s+nahi\s+pay)\b", re.I)),
     ("overdue_challans", re.compile(
         r"\b(overdue|over[\s-]?due|late|expired)\b", re.I)),
+    ("arrest_count",  re.compile(
+        r"\barrest(?:ed|s)?\b|\barrest\s+cases?\b|\bgiraftari(?:yan|ya[an]?)?\b",
+        re.I)),
+    ("epo",           re.compile(
+        r"\bepo\b|\bemergency\s+protection\s+orders?\b", re.I)),
+    ("removal_order", re.compile(
+        r"\bremoval\s+orders?\b|\bremoval[\s-]?orders?\b", re.I)),
     ("firs",          re.compile(r"\bfirs?\b", re.I)),
     ("sealed",        re.compile(r"\bseal(?:ed|ing)?\b", re.I)),
     ("challans",      re.compile(r"\bch[ae]+l+a+n+s?\b", re.I)),
@@ -365,7 +372,25 @@ def _detect_rank_intent(q: str) -> Optional[str]:
             level = lvl
             break
     order = "asc" if _RANK_LEAST_RE.search(q) else "desc"
-    return f"insp_top:{metric}:{level}:{order}"
+
+    # If the question names a parent location strictly broader than the
+    # ranking level (e.g. "stations in Lahore district"), scope the
+    # ranking to that parent location instead of returning a province-
+    # wide ranking.
+    parent_suffix = ""
+    try:
+        parent_loc = _detect_location(q)
+    except Exception:
+        parent_loc = None
+    if parent_loc:
+        plevel = parent_loc.get("level")
+        pname = parent_loc.get(f"{plevel}_name") if plevel else None
+        level_rank = {"tehsil": 1, "district": 2, "division": 3}
+        if (plevel and pname
+                and level_rank.get(plevel, 0) > level_rank.get(level, 0)):
+            parent_suffix = f":{plevel}:{pname}"
+
+    return f"insp_top:{metric}:{level}:{order}{parent_suffix}"
 
 
 _NAME_STOP_WORDS = frozenset({
@@ -821,11 +846,16 @@ def execute_inspection_lookup(
     elif base == "insp_repeat_offenders":
         return _query_repeat_offenders(db)
     elif base == "insp_top":
-        # Format: insp_top:<metric>:<level>:<order>
+        # Format: insp_top:<metric>:<level>:<order>[:<parent_type>:<parent_name>]
         metric = parts[1] if len(parts) > 1 else "firs"
         level = parts[2] if len(parts) > 2 else "tehsil"
         order = parts[3] if len(parts) > 3 else "desc"
-        return _query_top_locations(db, metric, level, order)
+        parent_type = parts[4] if len(parts) > 4 else None
+        parent_name = ":".join(parts[5:]) if len(parts) > 5 else None
+        return _query_top_locations(db, metric, level, order,
+                                    question=question,
+                                    parent_type=parent_type,
+                                    parent_name=parent_name)
 
     return None
 
@@ -1057,6 +1087,8 @@ def _query_top_by_payment_status(
 def _query_top_locations(
     db, metric: str, level: str, order: str = "desc",
     question: str = "",
+    parent_type: Optional[str] = None,
+    parent_name: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Rank tehsils/districts/divisions by a metric using the latest
     snapshot in inspection_performance. Used for "which station has the
@@ -1066,9 +1098,21 @@ def _query_top_locations(
     `question` is forwarded so amount rankings can detect a date range
     and apply WHERE action_date BETWEEN … instead of returning all-time
     silently.
+
+    `parent_type`/`parent_name` scope the ranking to a parent location
+    (e.g. tehsils within a specific district). Both must be supplied
+    together; ignored otherwise.
     """
+    # Normalize parent filter — only honor when parent is strictly
+    # broader than the ranking level.
+    _level_rank = {"tehsil": 1, "district": 2, "division": 3}
+    if parent_type and parent_name and (
+        _level_rank.get(parent_type, 0) <= _level_rank.get(level, 0)
+    ):
+        parent_type = parent_name = None
     safe_metrics = {"firs", "sealed", "challans", "warnings",
                     "no_offenses", "total_actions",
+                    "arrest_count", "epo", "removal_order",
                     "paid_challans", "unpaid_challans", "overdue_challans",
                     "paid_amount", "unpaid_amount", "overdue_amount",
                     "fine_amount"}
@@ -1082,6 +1126,35 @@ def _query_top_locations(
             ),
         }
     direction = "ASC" if (order or "").lower() == "asc" else "DESC"
+
+    # ── Date-range aware ranking for count metrics ──
+    # If question has explicit date range AND metric is a count metric that
+    # maps to a per-row flag in inspection_performance_detail.details_json,
+    # aggregate over the JSON instead of returning all-time cumulative.
+    _detail_flag_map = {
+        "firs":         "firCase",
+        "sealed":       "isSealed",
+        "challans":     "challanCase",
+        "warnings":     "warningCase",
+        "no_offenses":  "noOffense",
+    }
+    # Detect a date range up-front — used both for the daterange branch
+    # below and (for non-supported metrics) to flag the cumulative output.
+    try:
+        from pera_dates import parse_date_range
+        _user_dr = parse_date_range(question or "")
+    except Exception:
+        _user_dr = None
+
+    if metric in _detail_flag_map and _user_dr is not None:
+        res = _query_top_locations_daterange(
+            db, metric, level, direction,
+            _user_dr.start, _user_dr.end, _detail_flag_map[metric],
+            parent_type=parent_type, parent_name=parent_name,
+        )
+        if res is not None:
+            return res
+        # Fall through to cumulative if no detail data found
 
     # Amount-based rankings (Rs totals) come from challan_data row-level
     # aggregation — challan_tehsil_breakdown only stores counts.
@@ -1105,18 +1178,139 @@ def _query_top_locations(
     if payment_metric:
         return _query_top_by_payment_status(db, payment_metric, level, order)
 
+    # ── arrest / epo / removal_order ──
+    # inspection_performance has these as zero/NULL — actual values live
+    # in officer_inspection_detail (per-officer breakdown). Aggregate by
+    # tehsil/district/division within the latest snapshot.
+    _oid_col_map = {
+        "arrest_count":  "arrest_case",
+        "epo":           "epo",
+        "removal_order": "removal_order",
+    }
+    if metric in _oid_col_map:
+        sum_col = _oid_col_map[metric]
+        name_col = f"{level}_name"
+        parent_filter_sql = ""
+        parent_params: tuple = ()
+        if parent_type and parent_name:
+            parent_col = f"{parent_type}_name"
+            parent_filter_sql = f" AND {parent_col} ILIKE %s "
+            parent_params = (f"%{parent_name}%",)
+        rows = db.fetch_all(
+            f"""
+            WITH latest_snap AS (
+              SELECT MAX(snapshot_date) AS md FROM officer_inspection_detail
+            )
+            SELECT {name_col} AS loc_name,
+                   SUM(COALESCE({sum_col}, 0))         AS metric_value,
+                   SUM(COALESCE(arrest_case, 0))       AS arrest_count,
+                   SUM(COALESCE(epo, 0))               AS epo,
+                   SUM(COALESCE(removal_order, 0))     AS removal_order,
+                   SUM(COALESCE(sealed, 0))            AS sealed,
+                   SUM(COALESCE(total_challans, 0))    AS challans,
+                   SUM(COALESCE(total_inspections, 0)) AS total_actions,
+                   SUM(COALESCE(warning_count, 0))     AS warnings,
+                   SUM(COALESCE(no_offense_count, 0))  AS no_offenses,
+                   SUM(COALESCE(fine_amount, 0))       AS fine_amount,
+                   MAX(snapshot_date)                  AS snapshot_date
+            FROM officer_inspection_detail
+            WHERE snapshot_date = (SELECT md FROM latest_snap)
+              AND {name_col} IS NOT NULL
+              {parent_filter_sql}
+            GROUP BY {name_col}
+            HAVING SUM(COALESCE({sum_col}, 0)) > 0
+            ORDER BY metric_value {direction} NULLS LAST
+            LIMIT 25
+            """,
+            parent_params,
+        )
+        metric_label_oid = {
+            "arrest_count": "Arrests",
+            "epo": "EPOs",
+            "removal_order": "Removal Orders",
+        }[metric]
+        level_label_oid = {
+            "tehsil": "Tehsil", "district": "District", "division": "Division"
+        }[level]
+        sort_word = "Lowest" if direction == "ASC" else "Highest"
+        scope = (f" within {parent_name} ({parent_type})"
+                 if parent_type and parent_name else "")
+        snap_d = rows[0].get("snapshot_date") if rows else None
+        ctx = (
+            f"Ranking — {level_label_oid}s by {metric_label_oid}{scope} "
+            f"({sort_word} first)\n"
+        )
+        if snap_d:
+            ctx += f"Snapshot date: {snap_d}\n"
+        if _user_dr is not None:
+            date_label = (f"{_user_dr.start.strftime('%d %b %Y')} — "
+                          f"{_user_dr.end.strftime('%d %b %Y')}")
+            ctx += (
+                f"NOTE: '{metric_label_oid}' is stored as a cumulative "
+                f"all-time snapshot in officer_inspection_detail. The "
+                f"requested window ({date_label}) cannot be applied to "
+                f"this metric. Below ranking reflects the latest "
+                f"cumulative snapshot.\n"
+            )
+        if not rows:
+            ctx += (
+                f"\nNo {metric_label_oid.lower()} recorded for any "
+                f"{level_label_oid.lower()}"
+                f"{(' within ' + parent_name) if parent_name else ''}.\n"
+            )
+            return {
+                "source_id": f"insp_top:{metric}:{level}:{order}",
+                "records": [], "formatted_context": ctx,
+                "deterministic_answer": ctx,
+                "structured_payload": ctx,
+                "evidence_type": "ranking",
+            }
+        ctx += "=" * 50 + "\n"
+        ctx += (
+            f"{'Rank':<5s}{level_label_oid:<25s} "
+            f"{metric_label_oid:>14s}  Insp  Chal  Seal  Warn  Arr  EPO  RmO\n"
+        )
+        for i, r in enumerate(rows, 1):
+            ctx += (
+                f"{i:<5d}{(r.get('loc_name') or '—'):<25s} "
+                f"{int(r.get('metric_value') or 0):>14,}  "
+                f"{int(r.get('total_actions') or 0):>4,}  "
+                f"{int(r.get('challans') or 0):>4,}  "
+                f"{int(r.get('sealed') or 0):>4,}  "
+                f"{int(r.get('warnings') or 0):>4,}  "
+                f"{int(r.get('arrest_count') or 0):>3,}  "
+                f"{int(r.get('epo') or 0):>3,}  "
+                f"{int(r.get('removal_order') or 0):>3,}\n"
+            )
+        return {
+            "source_id": f"insp_top:{metric}:{level}:{order}",
+            "records": rows,
+            "formatted_context": ctx,
+            "deterministic_answer": ctx,
+            "structured_payload": ctx,
+            "evidence_type": "ranking",
+        }
+
     name_col = f"{level}_name"
+    parent_filter_sql = ""
+    parent_params: tuple = ()
+    if parent_type and parent_name:
+        parent_col = f"{parent_type}_name"
+        parent_filter_sql = f" AND {parent_col} ILIKE %s "
+        parent_params = (f"%{parent_name}%",)
     rows = db.fetch_all(
         f"SELECT {name_col} AS loc_name, {metric} AS metric_value, "
         f"       total_actions, challans, firs, warnings, sealed, "
+        f"       arrest_count, epo, removal_order, "
         f"       snapshot_date "
         f"FROM inspection_performance "
         f"WHERE level = %s AND snapshot_date = ("
         f"  SELECT MAX(snapshot_date) FROM inspection_performance WHERE level = %s"
         f") AND {name_col} IS NOT NULL "
+        f"{parent_filter_sql}"
         f"ORDER BY {metric} {direction} NULLS LAST "
         f"LIMIT 25",
-        (level, level),
+        (level, level) + parent_params,
     )
     if not rows:
         return {
@@ -1134,16 +1328,35 @@ def _query_top_locations(
         "warnings": "Warnings",
         "no_offenses": "No-Offense Cases",
         "total_actions": "Total Inspections/Actions",
+        "arrest_count": "Arrests",
+        "epo": "EPOs",
+        "removal_order": "Removal Orders",
     }[metric]
     level_label = {"tehsil": "Tehsil", "district": "District", "division": "Division"}[level]
 
     snap = rows[0].get("snapshot_date")
     sort_word = "Lowest" if direction == "ASC" else "Highest"
-    ctx = f"Ranking — {level_label}s by {metric_label} ({sort_word} first)\n"
+    scope = (f" within {parent_name} ({parent_type})"
+             if parent_type and parent_name else "")
+    ctx = f"Ranking — {level_label}s by {metric_label}{scope} ({sort_word} first)\n"
     if snap:
         ctx += f"Snapshot date: {snap}\n"
+    # Banner: explain when the user asked for a date window but the
+    # underlying detail data for this metric is not date-filterable.
+    if _user_dr is not None and metric not in _detail_flag_map:
+        date_label = (f"{_user_dr.start.strftime('%d %b %Y')} — "
+                      f"{_user_dr.end.strftime('%d %b %Y')}")
+        ctx += (
+            f"NOTE: '{metric_label}' is only stored as a cumulative "
+            f"all-time total in the PERA snapshot. The requested date "
+            f"window ({date_label}) cannot be applied to this metric. "
+            f"Below ranking is the latest cumulative snapshot.\n"
+        )
     ctx += "=" * 50 + "\n"
-    ctx += f"{'Rank':<5s}{level_label:<25s} {metric_label:>15s}  Insp  Chal  FIR  Seal  Warn\n"
+    ctx += (
+        f"{'Rank':<5s}{level_label:<25s} {metric_label:>15s}  "
+        f"Insp  Chal  FIR  Seal  Warn  Arr  EPO  RmO\n"
+    )
     for i, r in enumerate(rows, 1):
         ctx += (
             f"{i:<5d}{(r.get('loc_name') or '—'):<25s} "
@@ -1152,15 +1365,161 @@ def _query_top_locations(
             f"{int(r.get('challans') or 0):>4,}  "
             f"{int(r.get('firs') or 0):>3,}  "
             f"{int(r.get('sealed') or 0):>4,}  "
-            f"{int(r.get('warnings') or 0):>4,}\n"
+            f"{int(r.get('warnings') or 0):>4,}  "
+            f"{int(r.get('arrest_count') or 0):>3,}  "
+            f"{int(r.get('epo') or 0):>3,}  "
+            f"{int(r.get('removal_order') or 0):>3,}\n"
         )
-    ctx += (
-        f"\n(Ranking computed from latest stored snapshot of "
-        f"inspection_performance. Cumulative all-time totals; not "
-        f"date-range filtered.)\n"
-    )
+    if _user_dr is not None and metric in _detail_flag_map:
+        # Daterange branch failed earlier; mark fallback explicitly.
+        ctx += (
+            f"\n(No per-row SDEO detail rows matched the requested window; "
+            f"falling back to latest cumulative snapshot.)\n"
+        )
+    else:
+        ctx += (
+            f"\n(Ranking computed from latest stored snapshot of "
+            f"inspection_performance. Cumulative all-time totals; not "
+            f"date-range filtered.)\n"
+        )
     return {
         "source_id": f"insp_top:{metric}:{level}:{order}",
+        "records": rows,
+        "formatted_context": ctx,
+        "deterministic_answer": ctx,
+        "structured_payload": ctx,
+        "evidence_type": "ranking",
+    }
+
+
+# ── Date-range aware top-N ranking using detail JSON ─────────
+def _query_top_locations_daterange(
+    db, metric: str, level: str, direction: str,
+    start_dt, end_dt, flag_key: str,
+    parent_type: Optional[str] = None,
+    parent_name: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    """Rank tehsils/districts/divisions by a per-row count metric
+    filtered to an explicit [start_dt, end_dt] window.
+
+    Source: inspection_performance_detail.details_json (the SDEO
+    detail blob containing one JSON element per inspection action
+    with fields actionDate, firCase, challanCase, warningCase,
+    isSealed, noOffense).
+
+    When `parent_type`/`parent_name` are provided, the ranking is
+    further scoped to that parent location.
+    """
+    name_col = f"{level}_name"
+    start_iso = start_dt.isoformat()
+    end_iso = end_dt.isoformat()
+    parent_filter_sql = ""
+    parent_params: tuple = ()
+    if parent_type and parent_name:
+        parent_col = f"{parent_type}_name"
+        parent_filter_sql = f" AND {parent_col} ILIKE %s "
+        parent_params = (f"%{parent_name}%",)
+
+    sql = f"""
+    WITH latest_detail AS (
+      SELECT DISTINCT ON (tehsil_id)
+             tehsil_id, tehsil_name, district_name, division_name,
+             details_json, snapshot_date
+      FROM inspection_performance_detail
+      WHERE details_json IS NOT NULL
+      ORDER BY tehsil_id, snapshot_date DESC
+    ),
+    expanded AS (
+      SELECT ld.tehsil_name, ld.district_name, ld.division_name,
+             (d->>'actionDate')::timestamptz AS action_dt,
+             COALESCE((d->>'firCase')::boolean, false)     AS is_fir,
+             COALESCE((d->>'challanCase')::boolean, false) AS is_challan,
+             COALESCE((d->>'warningCase')::boolean, false) AS is_warning,
+             COALESCE((d->>'isSealed')::boolean, false)    AS is_sealed,
+             COALESCE((d->>'noOffense')::boolean, false)   AS is_no_offense
+      FROM latest_detail ld,
+           LATERAL jsonb_array_elements(
+               COALESCE(ld.details_json->'details', '[]'::jsonb)
+           ) d
+      WHERE (d->>'actionDate') IS NOT NULL
+    )
+    SELECT {name_col} AS loc_name,
+           SUM(CASE WHEN is_fir       THEN 1 ELSE 0 END) AS firs,
+           SUM(CASE WHEN is_challan   THEN 1 ELSE 0 END) AS challans,
+           SUM(CASE WHEN is_warning   THEN 1 ELSE 0 END) AS warnings,
+           SUM(CASE WHEN is_sealed    THEN 1 ELSE 0 END) AS sealed,
+           SUM(CASE WHEN is_no_offense THEN 1 ELSE 0 END) AS no_offenses,
+           COUNT(*) AS total_actions
+    FROM expanded
+    WHERE action_dt >= %s::timestamptz
+      AND action_dt <  (%s::date + INTERVAL '1 day')
+      AND {name_col} IS NOT NULL
+      {parent_filter_sql}
+    GROUP BY {name_col}
+    HAVING SUM(CASE WHEN is_fir       THEN 1 ELSE 0 END) +
+           SUM(CASE WHEN is_challan   THEN 1 ELSE 0 END) +
+           SUM(CASE WHEN is_warning   THEN 1 ELSE 0 END) +
+           SUM(CASE WHEN is_sealed    THEN 1 ELSE 0 END) +
+           SUM(CASE WHEN is_no_offense THEN 1 ELSE 0 END) > 0
+    ORDER BY {metric} {direction} NULLS LAST
+    LIMIT 25
+    """
+
+    try:
+        rows = db.fetch_all(sql, (start_iso, end_iso) + parent_params)
+    except Exception as e:
+        log.warning("Date-range top-locations query failed: %s", e)
+        return None
+
+    if not rows:
+        return None
+
+    metric_label = {
+        "firs": "FIRs",
+        "sealed": "Sealed Premises",
+        "challans": "Challans",
+        "warnings": "Warnings",
+        "no_offenses": "No-Offense Cases",
+    }.get(metric, metric)
+    level_label = {"tehsil": "Tehsil",
+                   "district": "District",
+                   "division": "Division"}[level]
+    sort_word = "Lowest" if direction == "ASC" else "Highest"
+    date_label = f"{start_dt.strftime('%d %b %Y')} — {end_dt.strftime('%d %b %Y')}"
+
+    # Build column list — skip duplicate of the ranked metric.
+    extra_cols = [
+        ("Inspections", "total_actions"),
+        ("Challans",    "challans"),
+        ("FIRs",        "firs"),
+        ("Sealed",      "sealed"),
+        ("Warnings",    "warnings"),
+    ]
+    extra_cols = [(lbl, key) for (lbl, key) in extra_cols if key != metric]
+
+    scope = (f" within {parent_name} ({parent_type})"
+             if parent_type and parent_name else "")
+    ctx = f"### Ranking — {level_label}s by {metric_label}{scope} ({sort_word} first)\n\n"
+    ctx += f"**Scope:** date-filtered ({date_label}){scope}  \n"
+    ctx += "**Source:** inspection_performance_detail.details_json (per-row SDEO actions)\n\n"
+    header = f"| Rank | {level_label} | {metric_label} |" + "".join(
+        f" {lbl} |" for (lbl, _k) in extra_cols
+    ) + "\n"
+    sep = "| --- | --- | ---: |" + "".join(" ---: |" for _ in extra_cols) + "\n"
+    ctx += header + sep
+    for i, r in enumerate(rows, 1):
+        row_str = (f"| {i} | {r.get('loc_name') or '—'} "
+                   f"| {int(r.get(metric) or 0):,} |")
+        for (_lbl, key) in extra_cols:
+            row_str += f" {int(r.get(key) or 0):,} |"
+        ctx += row_str + "\n"
+    ctx += (
+        f"\n(Ranking computed from per-row SDEO actions in the requested window. "
+        f"Each detail row is one inspection action; counts above are restricted "
+        f"to the {date_label} period.)\n"
+    )
+    return {
+        "source_id": f"insp_top:{metric}:{level}:daterange",
         "records": rows,
         "formatted_context": ctx,
         "deterministic_answer": ctx,

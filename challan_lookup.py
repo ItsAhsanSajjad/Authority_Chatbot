@@ -1031,6 +1031,9 @@ def _route_challan_question_core(q: str) -> str:
     _officer_keyword_re = re.compile(
         r"\b(?:officer|officers|imposed\s+by|issued\s+by|kis\s+officer|konsa\s+officer)\b", re.I
     )
+    _station_keyword_re = re.compile(
+        r"\b(?:station|stations|tehsil|tehsils|thana|thane)\b", re.I
+    )
     if location_match:
         loc_type, loc_name = location_match
 
@@ -1044,6 +1047,17 @@ def _route_challan_question_core(q: str) -> str:
                     break
             req_suffix = f":{req_key_found}" if req_key_found else ""
             return f"challan_officer_at_location:{loc_type}:{loc_name}{req_suffix}"
+
+        # If location is a district/division AND user asks about stations/tehsils
+        # → rank tehsils within that parent location
+        if loc_type in ("district", "division") and _station_keyword_re.search(q):
+            req_key_found = None
+            for req_key, req_pattern in _REQ_TYPE_MAP.items():
+                if req_pattern.search(q):
+                    req_key_found = req_key
+                    break
+            req_suffix = f":{req_key_found}" if req_key_found else ""
+            return f"challan_tehsil_in_location:{loc_type}:{loc_name}{req_suffix}"
 
         # Check if a specific requisition type is also mentioned
         for req_key, req_pattern in _REQ_TYPE_MAP.items():
@@ -1172,6 +1186,14 @@ def execute_challan_lookup(source_id: str, question: str = "") -> Optional[Dict[
             return _lookup_daterange(start_date, end_date, sub_intent, question)
 
         # Handle encoded source_ids
+        if source_id.startswith("challan_tehsil_in_location:"):
+            # challan_tehsil_in_location:loc_type:loc_name[:req_key]
+            parts = source_id.split(":", 3)
+            loc_type = parts[1] if len(parts) > 1 else "district"
+            loc_name = parts[2] if len(parts) > 2 else ""
+            req_key = parts[3] if len(parts) > 3 else None
+            return _lookup_tehsil_in_location(loc_type, loc_name, req_key)
+
         if source_id.startswith("challan_officer_at_location:"):
             # challan_officer_at_location:loc_type:loc_name[:req_key]
             parts = source_id.split(":", 3)
@@ -1710,6 +1732,38 @@ def _lookup_daterange(start_str: str, end_str: str,
             f"Officer {officer_name} — Challans ({date_label})",
             freshness=_dr_freshness)
 
+    # 5a. Tehsil ranking within a district/division for date range
+    if sub_intent.startswith("challan_tehsil_in_location:"):
+        parts = sub_intent.split(":", 3)
+        loc_type = parts[1] if len(parts) > 1 else "district"
+        loc_name = parts[2] if len(parts) > 2 else ""
+        req_key = parts[3] if len(parts) > 3 else None
+        parent_col = {"district": "district_name",
+                      "division": "division_name"}.get(loc_type, "district_name")
+        extra_params = [f"%{loc_name}%"]
+        req_filter = ""
+        req_label = ""
+        if req_key and req_key in _REQ_KEY_TO_DB_NAME:
+            req_filter = "AND requisition_type_name = %s "
+            extra_params.append(_REQ_KEY_TO_DB_NAME[req_key])
+            req_label = f" — {_REQ_KEY_TO_DB_NAME[req_key]}"
+        rows = db.fetch_all(
+            dedup_cte +
+            "SELECT tehsil_name, COUNT(*) AS total_challans, "
+            "       SUM(CASE WHEN LOWER(status)='paid' THEN 1 ELSE 0 END) AS paid_count, "
+            "       SUM(CASE WHEN LOWER(status)='unpaid' THEN 1 ELSE 0 END) AS unpaid_count, "
+            "       SUM(CASE WHEN LOWER(status)='overdue' THEN 1 ELSE 0 END) AS overdue_count, "
+            "       SUM(fine_amount) AS total_fine "
+            f"FROM latest_challan WHERE {parent_col} ILIKE %s {req_filter}"
+            "AND tehsil_name IS NOT NULL AND tehsil_name != '' "
+            "GROUP BY tehsil_name ORDER BY total_challans DESC",
+            tuple(base_params + extra_params),
+        )
+        return _format_daterange_tehsils(
+            rows, date_label,
+            f"Stations (Tehsils) in {loc_name}{req_label} ({date_label})",
+            loc_name, freshness=_dr_freshness)
+
     # 5. Officer ranking at location for date range
     if sub_intent.startswith("challan_officer_at_location:"):
         parts = sub_intent.split(":", 3)
@@ -1914,6 +1968,51 @@ def _format_daterange_officers(rows, date_label: str, title: str,
                          freshness=freshness)
 
 
+def _format_daterange_tehsils(rows, date_label: str, title: str, loc_name: str,
+                              freshness: Optional[Dict] = None) -> Optional[Dict]:
+    """Format date-range tehsil/station ranking within a parent location."""
+    if not rows:
+        no_msg = f"No challan records found for any station in {loc_name} for the period {date_label}."
+        ctx = (f"[Source Type: API]\n[Date Range: {date_label}]\n"
+               f"[Parent Location: {loc_name}]\n"
+               f"[Result: NO DATA FOUND]\n\n{no_msg}")
+        return _build_result("challan_daterange", title, [], no_msg, ctx)
+
+    lines = [f"**{title}**\n"]
+    ctx_lines = [
+        "[Source Type: API]",
+        "[API Name: PERA Tehsil/Station Ranking within Parent Location]",
+        f"[Date Range: {date_label}]",
+        f"[Parent Location: {loc_name}]",
+        f"[Total Stations: {len(rows)}]",
+        "[Note: PERA refers to tehsils as 'stations'.]",
+        "", f"{title}:", "",
+    ]
+    for i, r in enumerate(rows[:20], 1):
+        name = (r.get("tehsil_name") or "Unknown").strip()
+        total = r.get("total_challans", 0) or 0
+        paid = r.get("paid_count", 0) or 0
+        unpaid = r.get("unpaid_count", 0) or 0
+        overdue = r.get("overdue_count", 0) or 0
+        fine = r.get("total_fine", 0) or 0
+        ratio = (paid / total * 100) if total > 0 else 0
+        line = (f"{i}. **{name}**: {_fnum(total)} challans "
+                f"(Paid: {_fnum(paid)} | Unpaid: {_fnum(unpaid)} | Overdue: {_fnum(overdue)}) "
+                f"— Paid Ratio: {ratio:.1f}% — Fine: Rs. {_fnum(fine)}")
+        lines.append(line)
+        ctx_lines.append(f"{i}. {name}: {_fnum(total)} challans "
+                         f"(Paid: {_fnum(paid)} | Unpaid: {_fnum(unpaid)} | Overdue: {_fnum(overdue)}) "
+                         f"Paid Ratio: {ratio:.1f}% Fine: Rs. {_fnum(fine)}")
+
+    grand = sum(r.get("total_challans", 0) or 0 for r in rows)
+    lines.append(f"\n**Grand Total**: {_fnum(grand)} challans across {len(rows)} stations")
+    ctx_lines.append(f"\nGrand Total: {_fnum(grand)} challans across {len(rows)} stations")
+
+    return _build_result("challan_daterange", title,
+                         rows, "\n".join(lines), "\n".join(ctx_lines),
+                         freshness=freshness)
+
+
 def _format_daterange_comparison(rows, date_label: str,
                                   level_label: str, req_label: str,
                                   freshness: Optional[Dict] = None) -> Optional[Dict]:
@@ -2112,6 +2211,98 @@ def _format_daterange_location_detail(
         "challan_daterange", title,
         summary_rows, "\n".join(lines), "\n".join(ctx_lines),
         freshness=freshness,
+    )
+
+
+# ── Handler: Tehsils (Stations) within a District/Division ──
+
+def _lookup_tehsil_in_location(loc_type: str, loc_name: str,
+                                req_key: Optional[str] = None) -> Optional[Dict]:
+    """
+    Rank tehsils (stations) within a parent district/division by total challans.
+    e.g. "which station has issued the most challans in Lahore?"
+    Note: PERA terminology — tehsils are called 'stations'.
+    """
+    db = _get_db()
+    if not db:
+        return None
+
+    parent_col = {
+        "district": "district_name",
+        "division": "division_name",
+    }.get(loc_type, "district_name")
+
+    conditions = [f"{parent_col} ILIKE %s",
+                  "tehsil_name IS NOT NULL", "tehsil_name != ''"]
+    params: list = [f"%{loc_name}%"]
+
+    req_label = ""
+    if req_key and req_key in _REQ_KEY_TO_DB_NAME:
+        req_db_name = _REQ_KEY_TO_DB_NAME[req_key]
+        conditions.append("requisition_type_name = %s")
+        params.append(req_db_name)
+        req_label = f" — {req_db_name}"
+
+    where = " AND ".join(conditions)
+
+    rows = db.fetch_all(
+        "SELECT tehsil_name, "
+        "       COUNT(*) AS total_challans, "
+        "       SUM(CASE WHEN LOWER(status) = 'paid' THEN 1 ELSE 0 END) AS paid_count, "
+        "       SUM(CASE WHEN LOWER(status) = 'unpaid' THEN 1 ELSE 0 END) AS unpaid_count, "
+        "       SUM(CASE WHEN LOWER(status) = 'overdue' THEN 1 ELSE 0 END) AS overdue_count, "
+        "       SUM(fine_amount) AS total_fine, "
+        "       SUM(paid_amount) AS total_paid_amount "
+        "FROM challan_data "
+        f"WHERE {where} "
+        "GROUP BY tehsil_name "
+        "ORDER BY total_challans DESC",
+        tuple(params),
+    )
+
+    title = f"Stations (Tehsils) in {loc_name}{req_label}"
+
+    if not rows:
+        no_msg = f"No challan records found for any station in {loc_name}{req_label}."
+        ctx = (f"[Source Type: API]\n"
+               f"[API Name: PERA Tehsil/Station Ranking within {loc_name}]\n"
+               f"[Parent Location: {loc_name} ({loc_type})]\n"
+               f"[Result: NO DATA FOUND]\n\n{no_msg}")
+        return _build_result("challan_tehsil_in_location", title, [], no_msg, ctx)
+
+    lines = [f"**{title}**\n"]
+    ctx_lines = [
+        "[Source Type: API]",
+        f"[API Name: PERA Tehsil/Station Ranking within {loc_name}]",
+        f"[Parent Location: {loc_name} ({loc_type})]",
+        f"[Total Stations: {len(rows)}]",
+        "[Note: PERA refers to tehsils as 'stations'.]",
+        "", f"{title}:", "",
+    ]
+    for i, r in enumerate(rows[:20], 1):
+        name = (r.get("tehsil_name") or "Unknown").strip()
+        total = r.get("total_challans", 0) or 0
+        paid = r.get("paid_count", 0) or 0
+        unpaid = r.get("unpaid_count", 0) or 0
+        overdue = r.get("overdue_count", 0) or 0
+        fine = r.get("total_fine", 0) or 0
+        ratio = (paid / total * 100) if total > 0 else 0
+        line = (f"{i}. **{name}**: {_fnum(total)} challans "
+                f"(Paid: {_fnum(paid)} | Unpaid: {_fnum(unpaid)} | Overdue: {_fnum(overdue)}) "
+                f"— Paid Ratio: {ratio:.1f}% — Fine: Rs. {_fnum(fine)}")
+        lines.append(line)
+        ctx_lines.append(f"{i}. {name}: {_fnum(total)} challans "
+                         f"(Paid: {_fnum(paid)} | Unpaid: {_fnum(unpaid)} | Overdue: {_fnum(overdue)}) "
+                         f"Paid Ratio: {ratio:.1f}% Fine: Rs. {_fnum(fine)}")
+
+    grand = sum(r.get("total_challans", 0) or 0 for r in rows)
+    lines.append(f"\n**Grand Total**: {_fnum(grand)} challans across {len(rows)} stations")
+    ctx_lines.append(f"\nGrand Total: {_fnum(grand)} challans across {len(rows)} stations")
+
+    return _build_result(
+        "challan_tehsil_in_location", title,
+        rows, "\n".join(lines), "\n".join(ctx_lines),
+        freshness=_challan_data_freshness(db),
     )
 
 

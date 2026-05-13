@@ -52,6 +52,7 @@ class IntentCandidate:
 _DOMAIN_KW = {
     "inspection": _re_for_dispatch.compile(
         r"\b(inspect(?:ion)?s?|fir(?:s)?|sealed|warning(?:s)?|"
+        r"arrest(?:ed|s)?|arrest\s+cases?|giraftari(?:yan|ya[an]?)?|"
         r"removal\s+orders?|epo|no\s+offen[cs]es?|muayina|jaiz[ae]|"
         r"summery|summary|summmery|performance|dashboard|kpis?|"
         r"report\s*card|"
@@ -72,6 +73,7 @@ _DOMAIN_KW = {
 }
 _METRIC_KW = _re_for_dispatch.compile(
     r"\b(fir(?:s)?|sealed|challans?|warnings?|inspections?|"
+    r"arrest(?:ed|s)?|epo|removal\s+orders?|no\s+offen[cs]es?|"
     r"paid|unpaid|overdue|recovered|recovery|fine|amount|"
     r"top|highest|lowest|maximum|minimum|most|least)\b",
     _re_for_dispatch.I,

@@ -929,7 +929,29 @@ def simple_ask(request: Request, body: SimpleChatRequest):
                     # question is short (≤6 words). This avoids hijacking
                     # standalone fresh queries.
                     qwords = len(question.split())
-                    if merged_intent and (
+                    # Skip merge when the current question is a self-
+                    # contained ranking/comparison query (rank trigger +
+                    # admin-level keyword). Otherwise prior-turn entity
+                    # anchor (e.g. division=Lahore) hijacks the new
+                    # tehsil-ranking intent.
+                    import re as _re_rank
+                    _has_rank_trigger = bool(_re_rank.search(
+                        r"\b(sab\s*s[ey]\s*z[iy]ada|sabse\s*z[iy]ada|"
+                        r"most|top|highest|maximum|max|"
+                        r"largest|biggest|leading|leader|"
+                        r"least|lowest|minimum|min|"
+                        r"konsa|kaunsa|which|"
+                        r"kis\s+(?:station|tehsil|district|division))\b",
+                        question or "", _re_rank.I,
+                    ))
+                    _has_level_kw = bool(_re_rank.search(
+                        r"\b(division|district|tehsil|station)s?\b",
+                        question or "", _re_rank.I,
+                    ))
+                    _self_contained_rank = (
+                        _has_rank_trigger and _has_level_kw and qwords > 6
+                    )
+                    if merged_intent and not _self_contained_rank and (
                         qwords <= 6
                         or merged.metric != prev_lt.metric
                         or merged.status_filter != prev_lt.status_filter
