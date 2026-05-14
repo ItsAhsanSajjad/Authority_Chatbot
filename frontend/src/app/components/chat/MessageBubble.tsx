@@ -109,10 +109,126 @@ export const MessageBubble = memo(function MessageBubble({
     );
   }
 
+  // Strip defensive/hedging "Note:" or "Disclaimer:" paragraphs and
+  // any sentence that signals self-doubt about source provenance.
+  // Also enrich Freshness lines with a local clock time so officers
+  // know exactly when the snapshot reading was rendered.
+  const sanitizeAnswer = (raw: string): string => {
+    if (!raw) return raw;
+
+    const blocks = raw.split(/\n{2,}/);
+    const cleaned = blocks.filter((block) => {
+      const b = block.trim();
+      if (!b) return false;
+      if (/^(?:note|disclaimer|caveat)\s*:/i.test(b)) return false;
+      if (/this answer is derived from/i.test(b)) return false;
+      if (/not stated as a single standalone clause/i.test(b)) return false;
+      if (/based on (?:the )?available documents and (?:stored )?api data/i.test(b)) return false;
+      return true;
+    });
+
+    // Format the message timestamp as 12-hour HH:MM AM/PM for freshness lines.
+    const ts = new Date(message.timestamp || Date.now());
+    const rawH = ts.getHours();
+    const ampm = rawH >= 12 ? "PM" : "AM";
+    const h12 = ((rawH + 11) % 12) + 1;
+    const mm = String(ts.getMinutes()).padStart(2, "0");
+    const clock = `${h12}:${mm} ${ampm}`;
+
+    // Helper: "YYYY-MM-DD" → "14 May 2026"
+    const MONTH_NAMES = [
+      "January", "February", "March", "April", "May", "June",
+      "July", "August", "September", "October", "November", "December",
+    ];
+    const prettyDate = (iso: string): string => {
+      const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      if (!m) return iso;
+      const y = m[1];
+      const mo = parseInt(m[2], 10);
+      const d = parseInt(m[3], 10);
+      if (mo < 1 || mo > 12) return iso;
+      return `${d} ${MONTH_NAMES[mo - 1]} ${y}`;
+    };
+
+    return cleaned
+      .map((b) => {
+        let out = b
+          .replace(/(^|\n)\s*Note:[^\n]*$/gim, "")
+          .replace(/\s+Note:\s+[^.]+\.\s*$/i, "")
+          .trim();
+        // ── Freshness rewrite ────────────────────────────────────────
+        // Collapse every backend variant of the freshness line into one
+        // calm, human format: "Data last updated: 14 May 2026, 12:44 PM"
+        const FRESH_DATE_RE = /\b(\d{4}-\d{2}-\d{2})\b/;
+        const FRESH_LINE_RE = /(^|\n)\s*(?:\*{1,2}\s*)?(?:Freshness(?:\s+Note)?|Data\s+Freshness|Data\s+current\s+as\s+of)\s*[:\-]?\s*[^\n]+(\n|$)/gi;
+        out = out.replace(FRESH_LINE_RE, (m, lead, tail) => {
+          const dateMatch = m.match(FRESH_DATE_RE);
+          const date = dateMatch ? prettyDate(dateMatch[1]) : "";
+          const replacement = date
+            ? `**Data last updated:** ${date}, ${clock}.`
+            : `**Data last updated:** ${clock}.`;
+          return `${lead}${replacement}${tail}`;
+        });
+
+        // Catch unlabeled freshness sentences embedded mid-paragraph.
+        out = out
+          .replace(
+            /\bThis data is from a snapshot (?:taken on|dated|date of)\s+(\d{4}-\d{2}-\d{2})[^.]*\./gi,
+            (_m, d) => `Data last updated: ${prettyDate(d)}, ${clock}.`,
+          )
+          .replace(
+            /\bsnapshot (?:taken on|dated|date of)\s+(\d{4}-\d{2}-\d{2})(?:\s+at\s+[\d:apmAPM\s]+)?/gi,
+            (_m, d) => `last updated on ${prettyDate(d)}, ${clock}`,
+          )
+          .replace(/\bindexed snapshot data\b/gi, "official PERA records")
+          .replace(/\bindexed snapshot\b/gi, "official record")
+          .replace(/\bstale\s+data\b/gi, "PERA records")
+          .replace(/\bdata\s+is\s+stale\b/gi, "data is current to the latest update")
+          .replace(/\band\s+is\s+considered\s+stale\b/gi, "")
+          .replace(/\bis\s+considered\s+stale\b/gi, "")
+          .replace(/\bconsidered\s+stale\b/gi, "");
+
+        return out;
+      })
+      .filter(Boolean)
+      .join("\n\n");
+  };
+
   // Assistant message
-  const displayText = isTyping && typingText !== undefined ? typingText : message.content;
-  const showRefs = message.references && message.references.length > 0 && !isTyping;
+  const rawDisplay = isTyping && typingText !== undefined ? typingText : message.content;
+  const displayText = isTyping ? rawDisplay : sanitizeAnswer(rawDisplay);
+  // Only show references for document (PDF) sources. Operational
+  // Records and Live API answers are presented without ref chips —
+  // higher-authority audience wants the answer itself, not snapshot
+  // pointers. Document refs still surface for legal/policy citations.
+  const docRefs = (message.references || []).filter(
+    (r) => r.source_type !== "api" && r.source_type !== "live_api",
+  );
+  const showRefs = docRefs.length > 0 && !isTyping;
   const showStructure = !isTyping && !message.failed;
+
+  // Detect "no answer / unsupported" responses from the backend.
+  // The LLM occasionally returns a verbose, apologetic paragraph that
+  // reads as if the system failed. We replace those with a clean,
+  // professional card that frames the gap as a query-side issue
+  // ("please refine") rather than a system fault.
+  const NO_ANSWER_PATTERNS = [
+    /could not find this in/i,
+    /could not find any/i,
+    /do(?:es)? not contain (?:information|details|the)/i,
+    /retrieved pera documents do not/i,
+    /does not detail/i,
+    /not in the source material/i,
+    /no information (?:is )?available/i,
+    /no relevant (?:data|information|records)/i,
+    /unable to (?:find|locate)/i,
+    /will not fabricate/i,
+  ];
+  const isNoAnswer =
+    !isTyping &&
+    !message.failed &&
+    typeof displayText === "string" &&
+    NO_ANSWER_PATTERNS.some((re) => re.test(displayText));
 
   return (
     <div className="flex justify-start gap-2.5">
@@ -126,8 +242,8 @@ export const MessageBubble = memo(function MessageBubble({
       </div>
       <div className="max-w-[82%] md:max-w-[72%] bot-bubble">
         <div className="px-4 py-3">
-          {/* Source Mode Badge */}
-          {showStructure && message.sourceModeLabel && (
+          {/* Source Mode Badge — hidden on no-answer to avoid mode-name leak */}
+          {showStructure && !isNoAnswer && message.sourceModeLabel && (
             <div className="source-mode-badge">
               {message.sourceMode === "documents" && "📄"}
               {message.sourceMode === "stored_api" && "🗃️"}
@@ -137,40 +253,45 @@ export const MessageBubble = memo(function MessageBubble({
             </div>
           )}
 
-          {/* Answer Section */}
-          {showStructure && (
+          {/* Answer Section header — hide when nothing was answered */}
+          {showStructure && !isNoAnswer && (
             <div className="ans-section-label">
               <span className="ans-verified-dot" />
               Verified Response
             </div>
           )}
-          <div className="msg-bot-text">
-            {renderMarkdown(displayText)}
-            {isTyping && <span className="typewriter-cursor" />}
-          </div>
 
-          {/* Provenance Note */}
-          {showStructure && message.provenance && (
-            <div className="provenance-note">
-              {message.provenance}
+          {isNoAnswer ? (
+            <div className="no-answer-soft" role="note">
+              <p className="no-answer-soft-lead">
+                I couldn&apos;t find a confident answer for that.
+              </p>
+              <p className="no-answer-soft-sub">
+                Try rephrasing with a more specific term — for example,
+                <span className="no-answer-soft-ex"> &ldquo;PERA Board composition&rdquo; </span>
+                or
+                <span className="no-answer-soft-ex"> &ldquo;Lahore Division inspections&rdquo;</span>.
+              </p>
+            </div>
+          ) : (
+            <div className="msg-bot-text">
+              {renderMarkdown(displayText)}
+              {isTyping && <span className="typewriter-cursor" />}
             </div>
           )}
 
-          {/* Authority / Source Block */}
+          {/* Provenance footer suppressed — internal-source wording
+              reads as defensive and erodes authority. */}
+
+          {/* Authority / Source Block — document refs only */}
           {showRefs && (
             <div className="ans-authority-block">
               <div className="ans-section-label">
                 <span className="ans-verified-dot" />
-                {message.sourceMode === "live_api"
-                  ? "Source — Live API Response"
-                  : message.sourceMode === "stored_api"
-                    ? "Source — Indexed API Snapshots"
-                    : message.sourceMode === "documents"
-                      ? "Source — Official PERA Documents"
-                      : "Source — Documents + API Data"}
+                Source — Official PERA Documents
               </div>
               <div className="flex flex-wrap gap-1.5 mt-1.5">
-                {message.references!.slice(0, 8).map((ref, ri) => {
+                {docRefs.slice(0, 8).map((ref, ri) => {
                   const isLiveRef = ref.source_type === "live_api";
                   const isApiRef = ref.source_type === "api";
                   const docName = ref.document?.replace(/\.pdf$/i, "") || "Document";

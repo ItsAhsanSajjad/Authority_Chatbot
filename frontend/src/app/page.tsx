@@ -36,7 +36,7 @@ function StatusBadge({ status }: { status: ConnectionStatus }) {
 export default function Home() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [pdfModal, setPdfModal] = useState<{ url: string; title: string } | null>(null);
-  const [sourceMode, setSourceMode] = useState<AnswerSourceMode>("stored_api");
+  const [sourceMode, setSourceMode] = useState<AnswerSourceMode>("both");
 
   const { theme, toggleTheme } = useThemePreference();
   const { status, reportSuccess, reportFailure } = useHealthCheck();

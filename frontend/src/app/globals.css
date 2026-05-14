@@ -4465,3 +4465,26 @@ body,
 [data-theme="light"] .composer-edit-btn:hover {
   color: #b8860b;
 }
+
+/* ─── Soft no-answer state — friendly, plain language ─── */
+.no-answer-soft {
+  padding: 4px 2px 2px;
+}
+.no-answer-soft-lead {
+  font-size: 14.5px;
+  line-height: 1.55;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0 0 6px;
+}
+.no-answer-soft-sub {
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--text-secondary);
+  margin: 0;
+}
+.no-answer-soft-ex {
+  color: var(--gold);
+  font-weight: 500;
+  white-space: nowrap;
+}
