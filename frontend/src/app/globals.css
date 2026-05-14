@@ -4466,6 +4466,74 @@ body,
   color: #b8860b;
 }
 
+/* ─── Streaming stability ─────────────────────────────────────────
+   Disable scroll anchoring inside the chat list so the browser does
+   not fight our manual auto-scroll while tokens stream in. Paint
+   containment isolates layout work so a mid-stream paragraph→table
+   flip does not invalidate the whole bubble. */
+.msg-bot-text {
+  overflow-anchor: none;
+  contain: layout style;
+}
+
+/* ─── Markdown table — sober, official, mobile-safe ─── */
+.msg-table-wrap {
+  margin: 10px 0;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.msg-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-primary);
+  table-layout: auto;
+}
+.msg-table thead th {
+  text-align: left;
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--gold);
+  background: linear-gradient(180deg, rgba(212, 160, 23, 0.10), rgba(212, 160, 23, 0.03));
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--border-accent);
+  white-space: nowrap;
+}
+.msg-table thead th.is-num {
+  text-align: right;
+}
+.msg-table tbody td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+.msg-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+.msg-table tbody td.is-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+.msg-table tbody tr:nth-child(even) td {
+  background: rgba(212, 160, 23, 0.025);
+}
+[data-theme="light"] .msg-table thead th {
+  background: linear-gradient(180deg, rgba(184, 134, 11, 0.08), rgba(184, 134, 11, 0.02));
+  color: var(--accent);
+}
+[data-theme="light"] .msg-table tbody tr:nth-child(even) td {
+  background: rgba(184, 134, 11, 0.025);
+}
+
 /* ─── Soft no-answer state — friendly, plain language ─── */
 .no-answer-soft {
   padding: 4px 2px 2px;
@@ -4487,4 +4555,48 @@ body,
   color: var(--gold);
   font-weight: 500;
   white-space: nowrap;
+}
+
+/* ─── Honest thinking indicator (replaces fake phase ladder) ─── */
+.think-card-simple {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow-sm);
+  font-size: 12.5px;
+  color: var(--text-secondary);
+}
+.think-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.think-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: think-dot-pulse 1.2s ease-in-out infinite;
+}
+.think-dot:nth-child(2) { animation-delay: 0.15s; }
+.think-dot:nth-child(3) { animation-delay: 0.30s; }
+.think-text-label {
+  font-weight: 500;
+  color: var(--text-primary);
+  letter-spacing: 0.01em;
+}
+.think-elapsed {
+  margin-left: 4px;
+  font-size: 11px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+}
+@keyframes think-dot-pulse {
+  0%, 100% { opacity: 0.35; transform: scale(0.9); }
+  50%      { opacity: 1;    transform: scale(1.1); }
 }

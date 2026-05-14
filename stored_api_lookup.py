@@ -55,7 +55,7 @@ _DOMAIN_KW = {
         r"arrest(?:ed|s)?|arrest\s+cases?|giraftari(?:yan|ya[an]?)?|"
         r"removal\s+orders?|epo|no\s+offen[cs]es?|muayina|jaiz[ae]|"
         r"summery|summary|summmery|performance|dashboard|kpis?|"
-        r"report\s*card|"
+        r"report\s*card|breakdown|"
         # Phase-41: financial dashboard metrics — match here so a
         # tehsil-level financial query routes to the inspection
         # dashboard handler (which has the live SDEO merge) rather

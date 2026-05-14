@@ -109,6 +109,45 @@ export const MessageBubble = memo(function MessageBubble({
     );
   }
 
+  // ── repairNumbers — defensive normalizer ──────────────────────────
+  // The LLM occasionally regurgitates grouped integers with non-standard
+  // commas (e.g. "914,84,0", "1,07,5917", "31,46"), making operational
+  // statistics look corrupt to senior officers. This pass:
+  //
+  //   1. Finds every comma-grouped integer (>= 1,000 by structure),
+  //      strips the existing commas, reparses with parseInt, and
+  //      re-emits via Intl.NumberFormat("en-US"). The pass is
+  //      idempotent on already-correct numbers ("1,234,567" → "1,234,567").
+  //
+  //   2. Repairs four truncated keywords the model has been seen to emit
+  //      (e.g. "1,075,917 spections/actions").
+  //
+  // What we deliberately do NOT touch:
+  //   • Dates like 2026-05-14 — no commas, regex can't match.
+  //   • Times like 1:12 PM — no commas, regex can't match.
+  //   • Decimals like 0.5 or 1,234.5 — only the integer part can match;
+  //     the trailing ".5" is preserved outside the replacement.
+  //   • Plain integers without commas (e.g. "100", "999") — fewer than
+  //     two groups, regex requires `(?:,\d+){1,5}`.
+  //   • IDs / codes that aren't formatted as comma-grouped numbers
+  //     (e.g. "CNIC 12345-1234567-1", "PERA/2026/01") — no commas.
+  //   • Tabular numerals already passing through CSS — output is text.
+  const NUMBER_FMT = new Intl.NumberFormat("en-US");
+  const repairNumbers = (s: string): string => {
+    let out = s.replace(/\b\d{1,3}(?:,\d+){1,5}\b/g, (m) => {
+      const digits = m.replace(/[,\s]/g, "");
+      if (!/^\d+$/.test(digits)) return m;
+      const n = parseInt(digits, 10);
+      return Number.isFinite(n) ? NUMBER_FMT.format(n) : m;
+    });
+    out = out
+      .replace(/\bspections\/actions\b/g, "inspections/actions")
+      .replace(/\bspections\b/g, "inspections")
+      .replace(/\bhallans\b/g, "challans")
+      .replace(/\barnings\b/g, "warnings");
+    return out;
+  };
+
   // Strip defensive/hedging "Note:" or "Disclaimer:" paragraphs and
   // any sentence that signals self-doubt about source provenance.
   // Also enrich Freshness lines with a local clock time so officers
@@ -150,7 +189,7 @@ export const MessageBubble = memo(function MessageBubble({
       return `${d} ${MONTH_NAMES[mo - 1]} ${y}`;
     };
 
-    return cleaned
+    const joined = cleaned
       .map((b) => {
         let out = b
           .replace(/(^|\n)\s*Note:[^\n]*$/gim, "")
@@ -182,6 +221,47 @@ export const MessageBubble = memo(function MessageBubble({
           )
           .replace(/\bindexed snapshot data\b/gi, "official PERA records")
           .replace(/\bindexed snapshot\b/gi, "official record")
+          // Strip internal `[FRESHNESS — …]` tokens emitted by the
+          // backend freshness_helper. Convert to the user-accepted
+          // "Data last updated: <date>, <time>" line when a date is
+          // parseable inside the bracket; otherwise drop the bracket
+          // entirely so internal markers never reach the user.
+          .replace(
+            /\[FRESHNESS[^\]]*?(\d{4}-\d{2}-\d{2})(?:[\sT]+(\d{1,2}):(\d{2}))?[^\]]*\]/gi,
+            (_m, d, h, mi) => {
+              const [Y, M, D] = d.split("-");
+              const mo = parseInt(M, 10);
+              const dy = parseInt(D, 10);
+              const months = [
+                "January", "February", "March", "April", "May", "June",
+                "July", "August", "September", "October", "November", "December",
+              ];
+              if (mo < 1 || mo > 12) return "";
+              let timeStr = clock;
+              if (h && mi) {
+                const hh = parseInt(h, 10);
+                const ampm = hh >= 12 ? "PM" : "AM";
+                const h12 = ((hh + 11) % 12) + 1;
+                timeStr = `${h12}:${mi} ${ampm}`;
+              }
+              return `Data last updated: ${dy} ${months[mo - 1]} ${Y}, ${timeStr}.`;
+            },
+          )
+          .replace(/\[FRESHNESS[^\]]*\]/gi, "")
+          // Replace technical mode/source mentions with user-facing labels.
+          .replace(/\bDocuments\s*\+\s*Stored\s*API\s*Data\b/gi, "Policy + Operational Records")
+          .replace(/\bDocuments\s*\+\s*Stored\s*API\b/gi, "Policy + Operational Records")
+          .replace(/\bStored\s*API\s*Data\b/gi, "Operational Records")
+          .replace(/\bStored\s*API\b/gi, "Operational Records")
+          .replace(/\bAPI\s*Data\b/gi, "Operational Records")
+          .replace(/\bindexed\s*API\s*snapshots?\b/gi, "Operational Records")
+          // ── Inspection-summary phrasing ──────────────────────────────
+          // Promote the labelled metric and downgrade awkward LLM
+          // phrasings into clean institutional wording.
+          .replace(/\bTotal\s+Inspections\s*\/\s*Actions\b/g, "Total Regulatory Inspection Actions")
+          .replace(/\binspections\s*\/\s*actions\b/gi, "regulatory inspection actions")
+          .replace(/\bconducted\s+a\s+total\s+of\s+(?:regulatory\s+)?inspection(?:s)?(?:\s+(?:and\s+)?actions?)?\b/gi, "recorded")
+          .replace(/\bconducted\s+a\s+total\s+of\b/gi, "recorded a total of")
           .replace(/\bstale\s+data\b/gi, "PERA records")
           .replace(/\bdata\s+is\s+stale\b/gi, "data is current to the latest update")
           .replace(/\band\s+is\s+considered\s+stale\b/gi, "")
@@ -192,6 +272,7 @@ export const MessageBubble = memo(function MessageBubble({
       })
       .filter(Boolean)
       .join("\n\n");
+    return repairNumbers(joined);
   };
 
   // Assistant message
@@ -204,8 +285,14 @@ export const MessageBubble = memo(function MessageBubble({
   const docRefs = (message.references || []).filter(
     (r) => r.source_type !== "api" && r.source_type !== "live_api",
   );
-  const showRefs = docRefs.length > 0 && !isTyping;
-  const showStructure = !isTyping && !message.failed;
+  // Render structural metadata (source-mode badge, verification label,
+  // ref chips, related topics) from the first paint of the assistant
+  // bubble — even during the typewriter — so the bubble height stays
+  // stable. Previously these surfaced only after `isTyping` flipped
+  // false, causing a final layout jump that the scroll-pin had to
+  // chase. `message.failed` still suppresses them.
+  const showRefs = docRefs.length > 0 && !message.failed;
+  const showStructure = !message.failed;
 
   // Detect "no answer / unsupported" responses from the backend.
   // The LLM occasionally returns a verbose, apologetic paragraph that
@@ -224,11 +311,24 @@ export const MessageBubble = memo(function MessageBubble({
     /unable to (?:find|locate)/i,
     /will not fabricate/i,
   ];
+  // No-answer detection runs only on the FINAL content — never on the
+  // streaming partial — so we cannot flip the bubble layout
+  // mid-stream into the soft-card view.
   const isNoAnswer =
     !isTyping &&
     !message.failed &&
-    typeof displayText === "string" &&
-    NO_ANSWER_PATTERNS.some((re) => re.test(displayText));
+    typeof message.content === "string" &&
+    NO_ANSWER_PATTERNS.some((re) => re.test(message.content));
+
+  // Memoize the parsed markdown so we don't rebuild the same DOM tree
+  // when React re-renders this bubble for unrelated state (e.g. the
+  // 60s timestamp tick). When the typewriter is running, displayText
+  // genuinely changes every tick — memoization still pays off because
+  // identical intermediate states (rare but possible) reuse the tree.
+  const renderedBody = useMemo(
+    () => renderMarkdown(displayText),
+    [displayText],
+  );
 
   return (
     <div className="flex justify-start gap-2.5">
@@ -242,14 +342,20 @@ export const MessageBubble = memo(function MessageBubble({
       </div>
       <div className="max-w-[82%] md:max-w-[72%] bot-bubble">
         <div className="px-4 py-3">
-          {/* Source Mode Badge — hidden on no-answer to avoid mode-name leak */}
-          {showStructure && !isNoAnswer && message.sourceModeLabel && (
+          {/* Source Mode Badge — hidden on no-answer to avoid mode-name leak.
+              Labels are overridden on the frontend so users see official
+              institutional wording, never internal mode names. */}
+          {showStructure && !isNoAnswer && message.sourceMode && (
             <div className="source-mode-badge">
               {message.sourceMode === "documents" && "📄"}
               {message.sourceMode === "stored_api" && "🗃️"}
               {message.sourceMode === "both" && "🔗"}
               {message.sourceMode === "live_api" && "⚡"}
-              {" "}{message.sourceModeLabel}
+              {" "}
+              {message.sourceMode === "documents" && "Policy Documents"}
+              {message.sourceMode === "stored_api" && "Operational Records"}
+              {message.sourceMode === "both" && "Policy + Operational Records"}
+              {message.sourceMode === "live_api" && "Live Operational Feed"}
             </div>
           )}
 
@@ -275,7 +381,7 @@ export const MessageBubble = memo(function MessageBubble({
             </div>
           ) : (
             <div className="msg-bot-text">
-              {renderMarkdown(displayText)}
+              {renderedBody}
               {isTyping && <span className="typewriter-cursor" />}
             </div>
           )}

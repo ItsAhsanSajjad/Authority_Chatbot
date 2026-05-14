@@ -1119,13 +1119,44 @@ def simple_ask(request: Request, body: SimpleChatRequest):
             question_for_llm = query_for_retrieval
             log.info("Using rewritten query for LLM (vague follow-up): '%s'",
                      query_for_retrieval[:100])
-    result = answer_question(
-        question_for_llm,
-        retrieval,
-        conversation_history=hist_for_llm,
-        answer_source_mode=source_mode,
-        intent=intent_payload,
-    )
+    # ── Deterministic direct-answer bypass ────────────────────
+    # Certain structured inspection intents return a pre-formatted
+    # markdown breakdown table with safe-int values. We send that to
+    # the user verbatim so the LLM never has a chance to paraphrase
+    # the table away. Officer-detail / live-tehsil queries stay on
+    # the LLM path because their phrasing carries snapshot caveats.
+    direct_answer = None
+    try:
+        if isinstance(lookup_result, dict):
+            direct_answer = lookup_result.get("direct_answer")
+    except Exception:
+        direct_answer = None
+
+    if direct_answer:
+        log.info("Direct-answer bypass for lookup_type=%s", lookup_type)
+        result = {
+            "answer": direct_answer,
+            "decision": "answer",
+            "references": [],
+            "source_mode": source_mode,
+            "source_mode_label": (
+                "Operational Records" if source_mode == "stored_api"
+                else "Policy + Operational Records" if source_mode == "both"
+                else "Policy Documents" if source_mode == "documents"
+                else "Live Operational Feed"
+            ),
+            "grounding": None,
+            "support_state": "supported",
+            "provenance": None,
+        }
+    else:
+        result = answer_question(
+            question_for_llm,
+            retrieval,
+            conversation_history=hist_for_llm,
+            answer_source_mode=source_mode,
+            intent=intent_payload,
+        )
 
     # ── 6. Extract metadata for session + audit ───────────────
     evidence_ids, doc_names = extract_evidence_metadata(retrieval)

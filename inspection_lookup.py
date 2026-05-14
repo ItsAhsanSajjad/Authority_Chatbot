@@ -31,7 +31,10 @@ log = get_logger(__name__)
 # DB + API helpers
 # ══════════════════════════════════════════════════════════════
 _HEADERS = {"accept": "application/json"}
-_API_TIMEOUT = 30
+# Per-call timeout for live SDEO endpoints. Lowered from 30s so a slow
+# auxiliary endpoint cannot stack into a multi-minute total — the
+# tehsil-live path issues up to 4 sequential calls.
+_API_TIMEOUT = 10
 
 PCM_OFFICER_INSPECTIONS = (
     "https://pera360.punjab.gov.pk/backend/api/Pcm/officer-inspections"
@@ -64,6 +67,44 @@ def _get_db():
         return get_analytics_db()
     except Exception:
         return None
+
+
+# ── Freshness footer — user-facing format ───────────────────
+# Renders the inspection-data snapshot timestamp in the same wording
+# the frontend already accepted: "Data last updated: 14 May 2026,
+# 12:44 PM." Avoids depending on regex post-fixing of an internal
+# `[FRESHNESS — …]` token.
+_MONTH_NAMES = [
+    "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December",
+]
+
+
+def _format_user_freshness(snapshot_date) -> str:
+    try:
+        from datetime import date as _date, datetime as _dt
+        if isinstance(snapshot_date, str):
+            try:
+                snap = _dt.strptime(snapshot_date, "%Y-%m-%d").date()
+            except ValueError:
+                return f"Data last updated: {snapshot_date}."
+        elif isinstance(snapshot_date, _dt):
+            snap = snapshot_date.date()
+        elif isinstance(snapshot_date, _date):
+            snap = snapshot_date
+        else:
+            return f"Data last updated: {snapshot_date}."
+        now = _dt.now()
+        h = now.hour
+        ampm = "PM" if h >= 12 else "AM"
+        h12 = ((h + 11) % 12) + 1
+        clock = f"{h12}:{now.minute:02d} {ampm}"
+        return (
+            f"Data last updated: "
+            f"{snap.day} {_MONTH_NAMES[snap.month - 1]} {snap.year}, {clock}."
+        )
+    except Exception:
+        return f"Data last updated: {snapshot_date}."
 
 
 # ══════════════════════════════════════════════════════════════
@@ -112,6 +153,12 @@ _INSP_KEYWORDS = re.compile(
     r"\bkpis?\b|"
     r"\boverview\b|"
     r"\bcard\s+summary\b|"
+    # Phase: explicit "breakdown" / "division-wise" / "district-wise"
+    # variants. These read as authority-style requests for a full
+    # tabular breakdown and should always land on the inspection
+    # performance handler.
+    r"\bbreakdown\b|"
+    r"\b(?:division|district|tehsil|station)[-\s]?wise\b|"
     # Phase-41: financial metric keywords. A query like
     # "Multan City paid amount from 1 April to 20 April 2026" needs
     # to reach the inspection performance handler so the focused
@@ -1577,7 +1624,12 @@ def _query_insp_summary(
     money_totals = {k: 0.0 for k in money_keys}
     for r in rows:
         for k in int_keys:
-            totals[k] += int(r.get(k) or 0)
+            v = r.get(k)
+            try:
+                totals[k] += int(v or 0)
+            except (TypeError, ValueError):
+                # Non-numeric junk in DB → treat as 0 instead of crashing.
+                pass
         for k in money_keys:
             v = r.get(k)
             if v is not None:
@@ -1586,43 +1638,74 @@ def _query_insp_summary(
                 except (TypeError, ValueError):
                     pass
 
-    context = "Inspection Performance Summary (All Divisions)\n"
+    # Helper: coerce any None/str/float to int safely so a missing
+    # column never blows up the `:,` formatter.
+    def _i(v):
+        try:
+            return int(v or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    context = "Inspection Performance Summary — All Divisions of Punjab\n"
     context += "=" * 50 + "\n"
-    context += f"Total Inspections/Actions: {totals['total_actions']:,}\n"
-    context += f"Challans: {totals['challans']:,}\n"
-    context += f"FIRs: {totals['firs']:,}\n"
-    context += f"Warnings: {totals['warnings']:,}\n"
-    context += f"No Offenses: {totals['no_offenses']:,}\n"
-    context += f"Sealed: {totals['sealed']:,}\n"
+    # Instruct the LLM to preserve the table verbatim — otherwise it
+    # tends to paraphrase the rows into bullets and drop columns.
+    context += (
+        "IMPORTANT FORMATTING RULE: Your answer MUST include the "
+        "Division-wise Inspection Breakdown markdown table below in "
+        "full, with every column (Division, Inspections, Challans, "
+        "FIRs, Warnings, No Offenses, Sealed) and every row preserved. "
+        "Do not collapse it into bullets or drop columns. The province "
+        "totals are already implied by the opener sentence; do not "
+        "repeat them as bullets above the table.\n\n"
+    )
+    # Preferred opening sentence — the LLM tends to echo this verbatim.
+    context += (
+        f"PERA has recorded {_i(totals['total_actions']):,} regulatory "
+        f"inspection actions across Punjab. The summary below includes "
+        f"inspections, challans, FIRs, warnings, sealed premises, and "
+        f"no-offence outcomes.\n"
+    )
     # Phase-38 additions — only emit lines for non-zero columns so older
     # snapshots without these fields stay clean.
-    if totals["removal_order"]:
-        context += f"Removal Orders: {totals['removal_order']:,}\n"
-    if totals["epo"]:
-        context += f"EPO: {totals['epo']:,}\n"
-    if totals["arrest_count"]:
-        context += f"Arrest Cases: {totals['arrest_count']:,}\n"
-    if totals["pcm_count"]:
-        context += f"PCM: {totals['pcm_count']:,}\n"
-    if money_totals["fine_imposed"]:
-        context += f"Fine Imposed: Rs. {int(money_totals['fine_imposed']):,}\n"
-    if money_totals["fine_recovered"]:
-        context += f"Fine Recovered: Rs. {int(money_totals['fine_recovered']):,}\n"
-    if money_totals["fine_outstanding"]:
-        context += f"Fine Outstanding: Rs. {int(money_totals['fine_outstanding']):,}\n"
-    if totals["paid_count"]:
-        context += f"Paid Challans: {totals['paid_count']:,}\n"
-    if totals["unpaid_count"]:
-        context += f"Unpaid Challans: {totals['unpaid_count']:,}\n"
+    if _i(totals.get("removal_order")):
+        context += f"Removal Orders: {_i(totals['removal_order']):,}\n"
+    if _i(totals.get("epo")):
+        context += f"EPO: {_i(totals['epo']):,}\n"
+    if _i(totals.get("arrest_count")):
+        context += f"Arrest Cases: {_i(totals['arrest_count']):,}\n"
+    if _i(totals.get("pcm_count")):
+        context += f"PCM: {_i(totals['pcm_count']):,}\n"
+    if money_totals.get("fine_imposed"):
+        context += f"Fine Imposed: Rs. {_i(money_totals['fine_imposed']):,}\n"
+    if money_totals.get("fine_recovered"):
+        context += f"Fine Recovered: Rs. {_i(money_totals['fine_recovered']):,}\n"
+    if money_totals.get("fine_outstanding"):
+        context += f"Fine Outstanding: Rs. {_i(money_totals['fine_outstanding']):,}\n"
+    if _i(totals.get("paid_count")):
+        context += f"Paid Challans: {_i(totals['paid_count']):,}\n"
+    if _i(totals.get("unpaid_count")):
+        context += f"Unpaid Challans: {_i(totals['unpaid_count']):,}\n"
 
-    context += "\nDivision Breakdown:\n"
+    # Division-wise table — emit as a proper markdown table so the LLM
+    # preserves the column structure end-to-end. Numeric columns are
+    # right-aligned via `---:` so the frontend renderer keeps tabular
+    # numerals. Every metric uses `_i()` so missing fields render as 0.
+    context += "\nDivision-wise Inspection Breakdown:\n\n"
+    context += (
+        "| Division | Inspections | Challans | FIRs | Warnings | "
+        "No Offenses | Sealed |\n"
+        "|---|---:|---:|---:|---:|---:|---:|\n"
+    )
     for r in rows:
         context += (
-            f"  {r['division_name']}: "
-            f"{r.get('total_actions', 0):,} inspections, "
-            f"{r.get('challans', 0):,} challans, "
-            f"{r.get('warnings', 0):,} warnings, "
-            f"{r.get('no_offenses', 0):,} no offenses\n"
+            f"| {r.get('division_name') or 'Unknown'} "
+            f"| {_i(r.get('total_actions')):,} "
+            f"| {_i(r.get('challans')):,} "
+            f"| {_i(r.get('firs')):,} "
+            f"| {_i(r.get('warnings')):,} "
+            f"| {_i(r.get('no_offenses')):,} "
+            f"| {_i(r.get('sealed')):,} |\n"
         )
 
     # Phase 1 — uniform freshness stamp
@@ -1637,10 +1720,46 @@ def _query_insp_summary(
     except Exception:
         pass
 
+    # Deterministic direct answer — bypasses the LLM. We strip the
+    # "IMPORTANT FORMATTING RULE" prelude (LLM-only) and the H1 banner,
+    # leaving just the opener + breakdown table + freshness footer.
+    # The frontend renders this verbatim, so the 7-column table always
+    # appears intact regardless of LLM behaviour.
+    direct_answer = (
+        f"PERA has recorded {_i(totals['total_actions']):,} regulatory "
+        f"inspection actions across Punjab. The summary below includes "
+        f"inspections, challans, FIRs, warnings, sealed premises, and "
+        f"no-offence outcomes.\n\n"
+        "Division-wise Inspection Breakdown:\n\n"
+        "| Division | Inspections | Challans | FIRs | Warnings | "
+        "No Offenses | Sealed |\n"
+        "|---|---:|---:|---:|---:|---:|---:|\n"
+    )
+    for r in rows:
+        direct_answer += (
+            f"| {r.get('division_name') or 'Unknown'} "
+            f"| {_i(r.get('total_actions')):,} "
+            f"| {_i(r.get('challans')):,} "
+            f"| {_i(r.get('firs')):,} "
+            f"| {_i(r.get('warnings')):,} "
+            f"| {_i(r.get('no_offenses')):,} "
+            f"| {_i(r.get('sealed')):,} |\n"
+        )
+    # Freshness footer in the same human-readable format the frontend
+    # sanitizer would otherwise rewrite to. Emitting it directly keeps
+    # the "Data last updated: 14 May 2026, hh:mm AM/PM" wording the
+    # user already accepted, without depending on regex post-fixing.
+    try:
+        if _summary_snapshot is not None:
+            direct_answer += "\n" + _format_user_freshness(_summary_snapshot) + "\n"
+    except Exception:
+        pass
+
     return {
         "source_id": "insp_summary",
         "records": rows,
         "formatted_context": context,
+        "direct_answer": direct_answer,
     }
 
 
@@ -1724,25 +1843,42 @@ def _query_insp_location(
     context = f"Inspection Performance — {level.title()}: {name}\n"
     context += "=" * 50 + "\n"
 
+    # Safe int coercion for this block too.
+    def _i2(v):
+        try:
+            return int(v or 0)
+        except (TypeError, ValueError):
+            return 0
+
     if parent_rows:
         r = parent_rows[0]
-        context += f"Total Inspections/Actions: {r.get('total_actions', 0):,}\n"
-        context += f"Challans: {r.get('challans', 0):,}\n"
-        context += f"FIRs: {r.get('firs', 0):,}\n"
-        context += f"Warnings: {r.get('warnings', 0):,}\n"
-        context += f"No Offenses: {r.get('no_offenses', 0):,}\n"
-        context += f"Sealed: {r.get('sealed', 0):,}\n"
+        context += f"Total Regulatory Inspection Actions: {_i2(r.get('total_actions')):,}\n"
+        context += f"Challans: {_i2(r.get('challans')):,}\n"
+        context += f"FIRs: {_i2(r.get('firs')):,}\n"
+        context += f"Warnings: {_i2(r.get('warnings')):,}\n"
+        context += f"No Offenses: {_i2(r.get('no_offenses')):,}\n"
+        context += f"Sealed: {_i2(r.get('sealed')):,}\n"
 
     if child_rows:
         child_label = child_level.title() if child_level else "Sub-location"
-        context += f"\n{child_label} Breakdown:\n"
+        # District-wise (or sub-location) table — full 7-column breakdown
+        # emitted as a proper markdown table for end-to-end column fidelity.
+        context += f"\n{child_label}-wise Inspection Breakdown:\n\n"
+        context += (
+            f"| {child_label} | Inspections | Challans | FIRs | Warnings | "
+            "No Offenses | Sealed |\n"
+            "|---|---:|---:|---:|---:|---:|---:|\n"
+        )
         for r in child_rows:
-            child_name = r.get(f"{child_level}_name", "Unknown")
+            child_name = r.get(f"{child_level}_name") or "Unknown"
             context += (
-                f"  {child_name}: "
-                f"{r.get('total_actions', 0):,} inspections, "
-                f"{r.get('challans', 0):,} challans, "
-                f"{r.get('warnings', 0):,} warnings\n"
+                f"| {child_name} "
+                f"| {_i2(r.get('total_actions')):,} "
+                f"| {_i2(r.get('challans')):,} "
+                f"| {_i2(r.get('firs')):,} "
+                f"| {_i2(r.get('warnings')):,} "
+                f"| {_i2(r.get('no_offenses')):,} "
+                f"| {_i2(r.get('sealed')):,} |\n"
             )
 
     if officer_rows:
@@ -1810,11 +1946,55 @@ def _query_insp_location(
         # Footer is purely informational — never block the answer if it fails
         pass
 
-    return {
+    # Deterministic direct answer for location queries — bypasses the
+    # LLM. Only emitted when we have parent_rows (so we can introduce
+    # the location confidently) AND there is a children breakdown.
+    # Officer breakdown stays LLM-only because it can include
+    # snapshot-mismatch caveats that need natural-language phrasing.
+    direct_answer: Optional[str] = None
+    if parent_rows and child_rows and not officer_rows:
+        pr = parent_rows[0]
+        cl_label = (child_level or "sub-location").title()
+        intro = (
+            f"In the {name} {level.title()}, PERA has recorded "
+            f"{_i2(pr.get('total_actions')):,} regulatory inspection "
+            f"actions. The summary below includes inspections, "
+            f"challans, FIRs, warnings, sealed premises, and no-offence "
+            f"outcomes."
+        )
+        body = (
+            "\n\n"
+            f"{cl_label}-wise Inspection Breakdown:\n\n"
+            f"| {cl_label} | Inspections | Challans | FIRs | Warnings | "
+            "No Offenses | Sealed |\n"
+            "|---|---:|---:|---:|---:|---:|---:|\n"
+        )
+        for r in child_rows:
+            child_name = r.get(f"{child_level}_name") or "Unknown"
+            body += (
+                f"| {child_name} "
+                f"| {_i2(r.get('total_actions')):,} "
+                f"| {_i2(r.get('challans')):,} "
+                f"| {_i2(r.get('firs')):,} "
+                f"| {_i2(r.get('warnings')):,} "
+                f"| {_i2(r.get('no_offenses')):,} "
+                f"| {_i2(r.get('sealed')):,} |\n"
+            )
+        direct_answer = intro + body
+        try:
+            if parent_snapshot is not None:
+                direct_answer += "\n" + _format_user_freshness(parent_snapshot) + "\n"
+        except Exception:
+            pass
+
+    out: Dict[str, Any] = {
         "source_id": source_id,
         "records": parent_rows + child_rows,
         "formatted_context": context,
     }
+    if direct_answer is not None:
+        out["direct_answer"] = direct_answer
+    return out
 
 
 # ── Live SDEO API call for tehsil + date range ──────────────
@@ -1896,59 +2076,52 @@ def _query_tehsil_live(
     epo = data.get("epo", 0) or 0
     officers = data.get("officers", []) or []
 
-    # ── Auxiliary endpoint merges (top-kpis + status + PCM) ──
+    # ── Auxiliary endpoint merges — fired in parallel so the worst
+    #    case is one timeout window, not the sum of three. Without
+    #    this the tehsil-live path could stack 3× _API_TIMEOUT and
+    #    hang the UI well past a minute.
     fine_imposed = fine_recovered = unpaid_fine = None
     paid_count = unpaid_count = None
     paid_amount = unpaid_amount = None
     arrest_total = pcm_total = None
     force_deployed = None
-    try:
-        kpi = requests.get(
-            SDEO_TOP_KPIS,
-            params={"tehsilId": tehsil_id,
-                    "startDate": api_start_str,
-                    "endDate": api_end_str},
-            headers=_HEADERS, timeout=_API_TIMEOUT,
-        ).json()
-        if isinstance(kpi, dict):
-            fine_imposed = kpi.get("totalFineImposed")
-            fine_recovered = kpi.get("totalFineRecovered")
-            unpaid_fine = kpi.get("unpaidFineAmount")
-            # Dashboard "Enforcer" tile maps to totalForceDeployed.
-            force_deployed = kpi.get("totalForceDeployed")
-    except Exception as e:
-        log.debug("top-kpis fetch failed for %s: %s", tehsil_name, e)
 
-    try:
-        cs = requests.get(
-            SDEO_CHALLAN_STATUS_BREAKDOWN,
-            params={"tehsilId": tehsil_id,
-                    "startDate": api_start_str,
-                    "endDate": api_end_str},
-            headers=_HEADERS, timeout=_API_TIMEOUT,
-        ).json()
-        if isinstance(cs, dict):
-            paid_count = cs.get("paidCount")
-            unpaid_count = cs.get("unpaidCount")
-            paid_amount = cs.get("paidAmount")
-            unpaid_amount = cs.get("unpaidAmount")
-    except Exception as e:
-        log.debug("challan-status-breakdown fetch failed for %s: %s", tehsil_name, e)
+    def _fetch(url, params):
+        try:
+            r = requests.get(url, params=params,
+                             headers=_HEADERS, timeout=_API_TIMEOUT)
+            return r.json() if r.status_code == 200 else None
+        except Exception as e:
+            log.debug("aux fetch failed (%s): %s", url, e)
+            return None
 
-    # Pcm/dashboard-counts is all-time only (date params ignored).
-    # Pulled separately and surfaced in the all-time footer, NOT in
-    # the date-ranged KPI table.
-    try:
-        pcm_dc = requests.get(
-            PCM_DASHBOARD_COUNTS,
-            params={"tehsilId": tehsil_id},
-            headers=_HEADERS, timeout=_API_TIMEOUT,
-        ).json()
-        if isinstance(pcm_dc, dict):
-            arrest_total = pcm_dc.get("totalArrest")
-            pcm_total = pcm_dc.get("totalPCM")
-    except Exception as e:
-        log.debug("Pcm/dashboard-counts fetch failed for %s: %s", tehsil_name, e)
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    _common_params = {
+        "tehsilId": tehsil_id,
+        "startDate": api_start_str,
+        "endDate": api_end_str,
+    }
+    with ThreadPoolExecutor(max_workers=3) as _pool:
+        _fut_kpi = _pool.submit(_fetch, SDEO_TOP_KPIS, _common_params)
+        _fut_cs = _pool.submit(_fetch, SDEO_CHALLAN_STATUS_BREAKDOWN, _common_params)
+        _fut_pcm = _pool.submit(_fetch, PCM_DASHBOARD_COUNTS, {"tehsilId": tehsil_id})
+        kpi = _fut_kpi.result()
+        cs = _fut_cs.result()
+        pcm_dc = _fut_pcm.result()
+
+    if isinstance(kpi, dict):
+        fine_imposed = kpi.get("totalFineImposed")
+        fine_recovered = kpi.get("totalFineRecovered")
+        unpaid_fine = kpi.get("unpaidFineAmount")
+        force_deployed = kpi.get("totalForceDeployed")
+    if isinstance(cs, dict):
+        paid_count = cs.get("paidCount")
+        unpaid_count = cs.get("unpaidCount")
+        paid_amount = cs.get("paidAmount")
+        unpaid_amount = cs.get("unpaidAmount")
+    if isinstance(pcm_dc, dict):
+        arrest_total = pcm_dc.get("totalArrest")
+        pcm_total = pcm_dc.get("totalPCM")
 
     metrics = {
         "total_inspections": total_actions,
