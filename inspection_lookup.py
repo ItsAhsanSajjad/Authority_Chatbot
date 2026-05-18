@@ -110,6 +110,48 @@ def _format_user_freshness(snapshot_date) -> str:
 # ══════════════════════════════════════════════════════════════
 # Keyword / intent detection
 # ══════════════════════════════════════════════════════════════
+# Arrest / FIR-as-arrest detection. In the PERA dashboard, "totalArrest"
+# (PCM dashboard-counts endpoint) is the user-visible arrest tally and
+# equals the FIR count surfaced in the tooltip. A bare "how many arrests
+# in Lahore" must route to that focused number, not the full inspection
+# summary table whose totals are tracked by a separate snapshot.
+_ARREST_KEYWORDS = re.compile(
+    r"\b("
+    r"arrest(?:ed|s)?|arrest\s+case|"
+    r"giraftari|giraftariyan|giraftaar(?:i|y)?|"
+    r"hiraasat|hirasat|"
+    r"detain(?:ed|ment)?|"
+    r"kitne?\s+(?:logon|log|banday)\s+(?:ko\s+)?giraftaar"
+    r")\b",
+    re.I,
+)
+
+
+def _detect_arrest_intent(question: str) -> bool:
+    """True when the user is asking about arrests / FIR-as-arrest counts."""
+    return bool(_ARREST_KEYWORDS.search(question or ""))
+
+
+# Enforcer tile detection. In the PERA dashboard, "Enforcer" surfaces
+# the totalForceDeployed value from SDEO top-kpis (officers/personnel
+# deployed for enforcement). It is its own metric — NOT arrest, NOT
+# inspection officer count — and is live, date-ranged only.
+_ENFORCER_KEYWORDS = re.compile(
+    r"\b("
+    r"enforcers?|enforcement\s+(?:officers?|staff|force)|"
+    r"force\s+deployed|"
+    r"deployed\s+(?:force|officers?|staff)|"
+    r"kitn[ae]\s+enforcer"
+    r")\b",
+    re.I,
+)
+
+
+def _detect_enforcer_intent(question: str) -> bool:
+    """True when the user is asking about enforcer / force-deployed count."""
+    return bool(_ENFORCER_KEYWORDS.search(question or ""))
+
+
 _INSP_KEYWORDS = re.compile(
     r"\b("
     r"inspect(?:ion)?s?|"
@@ -126,6 +168,8 @@ _INSP_KEYWORDS = re.compile(
     r"firs?|"
     r"sealed|sealing|"
     r"arrest(?:ed|s)?|arrest\s+case|"
+    r"enforcers?|enforcement\s+(?:officers?|staff|force)|"
+    r"force\s+deployed|deployed\s+force|"
     r"warning(?:s)?|"
     r"no\s+offen[cs]e|"
     r"epo|removal\s+orders?|"
@@ -723,6 +767,28 @@ def detect_inspection_intent(question: str) -> Optional[str]:
     location = _detect_location(q)
     if location:
         level = location["level"]
+        # Arrest queries with an explicit location route to the focused
+        # arrest handler so the answer surfaces PCM totalArrest, not the
+        # full inspection-summary table (whose totals come from a
+        # different upstream API and confuse the user when they don't
+        # match the dashboard tooltip).
+        if _detect_arrest_intent(q):
+            if level == "division":
+                return f"insp_arrest_division:{location['division_name']}"
+            elif level == "district":
+                return f"insp_arrest_district:{location['district_name']}"
+            elif level == "tehsil":
+                return f"insp_arrest_tehsil:{location['tehsil_name']}"
+        # Enforcer queries route to the focused enforcer handler
+        # (totalForceDeployed from SDEO top-kpis, summed across child
+        # tehsils with a wide default date range).
+        if _detect_enforcer_intent(q):
+            if level == "division":
+                return f"insp_enforcer_division:{location['division_name']}"
+            elif level == "district":
+                return f"insp_enforcer_district:{location['district_name']}"
+            elif level == "tehsil":
+                return f"insp_enforcer_tehsil:{location['tehsil_name']}"
         if level == "division":
             return f"insp_division:{location['division_name']}"
         elif level == "district":
@@ -883,6 +949,14 @@ def execute_inspection_lookup(
         name = ":".join(parts[1:]) if len(parts) > 1 else ""
         return _query_insp_location(db, "tehsil", name, start_date, end_date,
                                     question=question)
+    elif base in ("insp_arrest_division", "insp_arrest_district", "insp_arrest_tehsil"):
+        level = base.split("_", 2)[2]  # division | district | tehsil
+        name = ":".join(parts[1:]) if len(parts) > 1 else ""
+        return _query_arrest_location(db, level, name)
+    elif base in ("insp_enforcer_division", "insp_enforcer_district", "insp_enforcer_tehsil"):
+        level = base.split("_", 2)[2]
+        name = ":".join(parts[1:]) if len(parts) > 1 else ""
+        return _query_enforcer_location(db, level, name, start_date, end_date)
     elif base == "insp_officer":
         officer_name = ":".join(parts[1:]) if len(parts) > 1 else ""
         return _query_insp_officer(db, officer_name, start_date, end_date,
@@ -1764,6 +1838,322 @@ def _query_insp_summary(
 
 
 # ── Location query (division / district / tehsil) ───────────
+def _query_arrest_location(
+    db, level: str, name: str,
+) -> Dict[str, Any]:
+    """Focused arrest count for a division/district/tehsil.
+
+    Calls PCM /Pcm/dashboard-counts (all-time totalArrest) for every
+    tehsil under the location and sums. Arrest is its own metric in
+    the PERA dashboard — NOT the same as FIR. FIRs are tracked under
+    inspection-summary.fiRs and represent a different enforcement
+    action; the dashboard tile labelled "Arrest" maps to PCM
+    totalArrest, the tile labelled "FIR" maps to inspection-summary
+    fiRs. This handler is the arrest tile only.
+
+    Returns a direct_answer so the LLM is bypassed entirely — the
+    number is deterministic and the wording is fixed.
+    """
+    source_id = f"insp_arrest_{level}:{name}"
+
+    # Resolve the set of tehsil_ids under this location. The
+    # dim_tehsil table carries (tehsil_id, tehsil_name, district_name,
+    # division_name) so a single filter is enough for any level.
+    # dim_tehsil only stores tehsil_id + district_id, so district / division
+    # filters must join through dim_district (and dim_division) by id.
+    tehsils: List[Dict[str, Any]] = []
+    try:
+        if level == "tehsil":
+            tehsils = db.fetch_all(
+                "SELECT tehsil_id, tehsil_name FROM dim_tehsil "
+                "WHERE tehsil_name = %s",
+                (name,),
+            )
+        elif level == "district":
+            tehsils = db.fetch_all(
+                "SELECT t.tehsil_id, t.tehsil_name "
+                "FROM dim_tehsil t "
+                "JOIN dim_district d ON d.district_id = t.district_id "
+                "WHERE d.district_name = %s "
+                "ORDER BY t.tehsil_name",
+                (name,),
+            )
+        elif level == "division":
+            tehsils = db.fetch_all(
+                "SELECT t.tehsil_id, t.tehsil_name "
+                "FROM dim_tehsil t "
+                "JOIN dim_district d ON d.district_id = t.district_id "
+                "JOIN dim_division v ON v.division_id = d.division_id "
+                "WHERE v.division_name = %s "
+                "ORDER BY t.tehsil_name",
+                (name,),
+            )
+    except Exception as e:
+        log.warning("dim_tehsil lookup failed for %s '%s': %s", level, name, e)
+
+    if not tehsils:
+        return {
+            "source_id": source_id,
+            "records": [],
+            "formatted_context": (
+                f"No tehsils found under {level} '{name}'. Cannot compute "
+                f"arrest totals.\n"
+            ),
+        }
+
+    # Fan-out PCM dashboard-counts per tehsil in parallel — total wait
+    # capped at one _API_TIMEOUT window, not len(tehsils) * timeout.
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    per_tehsil: List[Dict[str, Any]] = []
+
+    def _fetch(tid: int, tname: str) -> Dict[str, Any]:
+        try:
+            r = requests.get(
+                PCM_DASHBOARD_COUNTS,
+                params={"tehsilId": tid},
+                headers=_HEADERS,
+                timeout=_API_TIMEOUT,
+            )
+            r.raise_for_status()
+            j = r.json() if isinstance(r.json(), dict) else {}
+            return {
+                "tehsil_id": tid,
+                "tehsil_name": tname,
+                "arrest": int(j.get("totalArrest") or 0),
+                "pcm": int(j.get("totalPCM") or 0),
+                "error": None,
+            }
+        except Exception as e:
+            return {
+                "tehsil_id": tid, "tehsil_name": tname,
+                "arrest": 0, "pcm": 0, "error": str(e),
+            }
+
+    workers = min(8, max(2, len(tehsils)))
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        futs = [ex.submit(_fetch, t["tehsil_id"], t["tehsil_name"]) for t in tehsils]
+        for f in as_completed(futs):
+            per_tehsil.append(f.result())
+
+    per_tehsil.sort(key=lambda r: r["tehsil_name"])
+    total_arrest = sum(r["arrest"] for r in per_tehsil)
+    total_pcm = sum(r["pcm"] for r in per_tehsil)
+    err_count = sum(1 for r in per_tehsil if r["error"])
+
+    # Direct answer — no LLM. PCM dashboard-counts is all-time, so the
+    # opener must not claim a date window.
+    intro = (
+        f"In the {name} {level.title()}, PERA has registered a cumulative "
+        f"total of {total_arrest:,} arrests across "
+        f"{len(per_tehsil)} tehsil(s). (Arrest is reported separately "
+        f"from FIRs in the PERA dashboard — this answer covers arrests "
+        f"only.)"
+    )
+    body = "\n\nTehsil-wise Arrest Breakdown:\n\n"
+    body += "| Tehsil | Arrests | PCM Cases |\n|---|---:|---:|\n"
+    for r in per_tehsil:
+        body += f"| {r['tehsil_name']} | {r['arrest']:,} | {r['pcm']:,} |\n"
+    body += f"| **Total** | **{total_arrest:,}** | **{total_pcm:,}** |\n"
+
+    if err_count:
+        body += (
+            f"\n_Note: {err_count} tehsil(s) returned no data from the live "
+            f"PCM endpoint; their counts are shown as 0._\n"
+        )
+
+    # Freshness footer — PCM dashboard-counts is live, so the snapshot
+    # is "right now".
+    from datetime import datetime as _dt
+    now = _dt.now()
+    h = now.hour
+    ampm = "PM" if h >= 12 else "AM"
+    h12 = ((h + 11) % 12) + 1
+    body += (
+        f"\nData last updated: {now.day} {_MONTH_NAMES[now.month - 1]} "
+        f"{now.year}, {h12}:{now.minute:02d} {ampm}.\n"
+    )
+
+    formatted_context = (
+        f"Arrest summary — {level.title()}: {name}\n"
+        + "=" * 50 + "\n"
+        + f"Total arrests: {total_arrest:,}\n"
+        + f"Total PCM cases: {total_pcm:,}\n"
+        + f"Tehsils queried: {len(per_tehsil)} (errors: {err_count})\n"
+        + "Note: Arrest is a distinct metric in the PERA dashboard, "
+          "tracked separately from FIRs. Do not conflate the two.\n"
+    )
+
+    return {
+        "source_id": source_id,
+        "records": per_tehsil,
+        "formatted_context": formatted_context,
+        "direct_answer": intro + body,
+    }
+
+
+def _query_enforcer_location(
+    db, level: str, name: str,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+) -> Dict[str, Any]:
+    """Focused enforcer (force-deployed) count for a location.
+
+    Calls SDEO /sdeo-dashboard/top-kpis per tehsil under the location
+    and sums totalForceDeployed. The endpoint is date-ranged; when the
+    user gives no explicit dates ("ab tk" / cumulative), default to
+    2024-01-01 → today which spans the entire PERA enforcement
+    history.
+
+    Enforcer is its own dashboard tile, distinct from arrest and
+    distinct from inspection-officer count.
+    """
+    from datetime import datetime as _dt, date as _date, timedelta as _td
+    source_id = f"insp_enforcer_{level}:{name}"
+
+    if not end_date:
+        end_date = _date.today()
+    if not start_date:
+        # Wide enough to cover all PERA records — the live SDEO endpoint
+        # rejects an open-ended range so we always pass a bounded one.
+        start_date = _date(2024, 1, 1)
+
+    # Resolve child tehsils via the same dim_district / dim_division
+    # joins used by _query_arrest_location.
+    tehsils: List[Dict[str, Any]] = []
+    try:
+        if level == "tehsil":
+            tehsils = db.fetch_all(
+                "SELECT tehsil_id, tehsil_name FROM dim_tehsil "
+                "WHERE tehsil_name = %s",
+                (name,),
+            )
+        elif level == "district":
+            tehsils = db.fetch_all(
+                "SELECT t.tehsil_id, t.tehsil_name "
+                "FROM dim_tehsil t "
+                "JOIN dim_district d ON d.district_id = t.district_id "
+                "WHERE d.district_name = %s "
+                "ORDER BY t.tehsil_name",
+                (name,),
+            )
+        elif level == "division":
+            tehsils = db.fetch_all(
+                "SELECT t.tehsil_id, t.tehsil_name "
+                "FROM dim_tehsil t "
+                "JOIN dim_district d ON d.district_id = t.district_id "
+                "JOIN dim_division v ON v.division_id = d.division_id "
+                "WHERE v.division_name = %s "
+                "ORDER BY t.tehsil_name",
+                (name,),
+            )
+    except Exception as e:
+        log.warning("dim_tehsil lookup failed for %s '%s': %s", level, name, e)
+
+    if not tehsils:
+        return {
+            "source_id": source_id,
+            "records": [],
+            "formatted_context": (
+                f"No tehsils found under {level} '{name}'. Cannot compute "
+                f"enforcer totals.\n"
+            ),
+        }
+
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    per_tehsil: List[Dict[str, Any]] = []
+    sdate = start_date.isoformat()
+    edate = end_date.isoformat()
+
+    def _fetch(tid: int, tname: str) -> Dict[str, Any]:
+        try:
+            r = requests.get(
+                "https://pera360.punjab.gov.pk/backend/api/sdeo-dashboard/top-kpis",
+                params={"tehsilId": tid, "startDate": sdate, "endDate": edate},
+                headers=_HEADERS,
+                timeout=_API_TIMEOUT,
+            )
+            r.raise_for_status()
+            j = r.json() if isinstance(r.json(), dict) else {}
+            return {
+                "tehsil_id": tid,
+                "tehsil_name": tname,
+                "enforcers": int(j.get("totalForceDeployed") or 0),
+                "vehicles": int(j.get("vehiclesUsed") or 0),
+                "operations": int(j.get("operationsExecuted") or 0),
+                "error": None,
+            }
+        except Exception as e:
+            return {
+                "tehsil_id": tid, "tehsil_name": tname,
+                "enforcers": 0, "vehicles": 0, "operations": 0,
+                "error": str(e),
+            }
+
+    workers = min(8, max(2, len(tehsils)))
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        futs = [ex.submit(_fetch, t["tehsil_id"], t["tehsil_name"]) for t in tehsils]
+        for f in as_completed(futs):
+            per_tehsil.append(f.result())
+
+    per_tehsil.sort(key=lambda r: r["enforcers"], reverse=True)
+    total_enforcers = sum(r["enforcers"] for r in per_tehsil)
+    total_vehicles = sum(r["vehicles"] for r in per_tehsil)
+    total_ops = sum(r["operations"] for r in per_tehsil)
+    err_count = sum(1 for r in per_tehsil if r["error"])
+
+    intro = (
+        f"Across the {name} {level.title()} (period {sdate} to {edate}), "
+        f"PERA has deployed a cumulative total of {total_enforcers:,} "
+        f"enforcers (force-deployed personnel) across "
+        f"{len(per_tehsil)} tehsil(s). Enforcer is the dashboard tile "
+        f"that maps to the SDEO top-kpis `totalForceDeployed` field; it "
+        f"is reported separately from arrests, FIRs, and inspection "
+        f"officers."
+    )
+    body = "\n\nTehsil-wise Enforcer Breakdown:\n\n"
+    body += "| Tehsil | Enforcers | Vehicles | Operations |\n|---|---:|---:|---:|\n"
+    for r in per_tehsil:
+        body += (
+            f"| {r['tehsil_name']} | {r['enforcers']:,} "
+            f"| {r['vehicles']:,} | {r['operations']:,} |\n"
+        )
+    body += (
+        f"| **Total** | **{total_enforcers:,}** | **{total_vehicles:,}** "
+        f"| **{total_ops:,}** |\n"
+    )
+    if err_count:
+        body += (
+            f"\n_Note: {err_count} tehsil(s) returned no data from the live "
+            f"SDEO top-kpis endpoint; their counts are shown as 0._\n"
+        )
+
+    now = _dt.now()
+    h = now.hour
+    ampm = "PM" if h >= 12 else "AM"
+    h12 = ((h + 11) % 12) + 1
+    body += (
+        f"\nData last updated: {now.day} {_MONTH_NAMES[now.month - 1]} "
+        f"{now.year}, {h12}:{now.minute:02d} {ampm}.\n"
+    )
+
+    formatted_context = (
+        f"Enforcer summary — {level.title()}: {name} "
+        f"({sdate} → {edate})\n"
+        + "=" * 50 + "\n"
+        + f"Total enforcers (force-deployed): {total_enforcers:,}\n"
+        + f"Total vehicles used: {total_vehicles:,}\n"
+        + f"Total operations executed: {total_ops:,}\n"
+        + f"Tehsils queried: {len(per_tehsil)} (errors: {err_count})\n"
+    )
+
+    return {
+        "source_id": source_id,
+        "records": per_tehsil,
+        "formatted_context": formatted_context,
+        "direct_answer": intro + body,
+    }
+
+
 def _query_insp_location(
     db, level: str, name: str,
     start_date: Optional[date], end_date: Optional[date],
@@ -1952,15 +2342,95 @@ def _query_insp_location(
     # Officer breakdown stays LLM-only because it can include
     # snapshot-mismatch caveats that need natural-language phrasing.
     direct_answer: Optional[str] = None
-    if parent_rows and child_rows and not officer_rows:
+
+    # ── Focused single-metric short-circuit ────────────────────
+    # "lahore mein kitne sealed" / "how many FIRs in Faisalabad" —
+    # user asked about ONE specific metric. Return only that column
+    # (district headline + child breakdown) so the answer matches the
+    # question instead of dumping the full 6-column summary table.
+    _METRIC_LABELS = {
+        "sealed":       ("Sealed Premises", "premises sealed"),
+        "firs":         ("FIRs", "FIRs registered"),
+        "warnings":     ("Warnings", "warnings issued"),
+        "no_offenses":  ("No-Offence Outcomes", "no-offence outcomes recorded"),
+        "challans":     ("Challans", "challans issued"),
+        "total_actions":("Inspection Actions", "inspection actions recorded"),
+    }
+    _BROAD_RE = re.compile(
+        r"\b(summary|breakdown|overview|all|full|detailed?|complete|"
+        r"performance|report|dashboard|card|kpis?)\b",
+        re.I,
+    )
+
+    def _detect_single_metric(q: str) -> Optional[str]:
+        if not q or _BROAD_RE.search(q):
+            return None
+        hits: List[str] = []
+        # Skip metrics not surfaced in inspection_performance children
+        # to avoid claiming data we don't have at the row level.
+        focusable = {"sealed", "firs", "warnings", "no_offenses",
+                     "challans", "total_actions"}
+        for col, rx in _RANK_METRIC_MAP:
+            if col not in focusable:
+                continue
+            if rx.search(q):
+                hits.append(col)
+        # Exactly one focused metric mentioned → focused mode.
+        return hits[0] if len(hits) == 1 else None
+
+    focused_metric = _detect_single_metric(question or "")
+    if (focused_metric
+            and parent_rows
+            and child_rows
+            and not officer_rows):
         pr = parent_rows[0]
         cl_label = (child_level or "sub-location").title()
+        label_plural, label_phrase = _METRIC_LABELS[focused_metric]
+        parent_value = _i2(pr.get(focused_metric))
         intro = (
-            f"In the {name} {level.title()}, PERA has recorded "
-            f"{_i2(pr.get('total_actions')):,} regulatory inspection "
-            f"actions. The summary below includes inspections, "
+            f"As of the latest snapshot, the {name} {level.title()} has "
+            f"{parent_value:,} {label_phrase} across "
+            f"{len(child_rows)} {cl_label.lower()}(s)."
+        )
+        body = (
+            "\n\n"
+            f"{cl_label}-wise {label_plural}:\n\n"
+            f"| {cl_label} | {label_plural} |\n"
+            "|---|---:|\n"
+        )
+        running = 0
+        for r in sorted(child_rows,
+                        key=lambda x: _i2(x.get(focused_metric)),
+                        reverse=True):
+            cname = r.get(f"{child_level}_name") or "Unknown"
+            v = _i2(r.get(focused_metric))
+            running += v
+            body += f"| {cname} | {v:,} |\n"
+        body += f"| **Total** | **{running:,}** |\n"
+        direct_answer = intro + body
+        try:
+            if parent_snapshot is not None:
+                direct_answer += "\n" + _format_user_freshness(parent_snapshot) + "\n"
+        except Exception:
+            pass
+
+    if direct_answer is None and parent_rows and child_rows and not officer_rows:
+        pr = parent_rows[0]
+        cl_label = (child_level or "sub-location").title()
+        # The numbers below are sourced from the DG-Dashboard
+        # inspection-performance API, which EXCLUDES overdue challans
+        # and refreshes on a ~2-hour cadence. The live PERA360
+        # dashboard tooltip pulls from a different upstream and can
+        # therefore show a slightly higher action total. We surface
+        # this in the opener so the user does not read a 5-10% gap as
+        # a math error.
+        intro = (
+            f"As of the latest snapshot, the {name} {level.title()} has "
+            f"{_i2(pr.get('total_actions')):,} recorded regulatory "
+            f"inspection actions. The breakdown below covers inspections, "
             f"challans, FIRs, warnings, sealed premises, and no-offence "
-            f"outcomes."
+            f"outcomes (overdue challans are tracked separately and may "
+            f"not be included)."
         )
         body = (
             "\n\n"
