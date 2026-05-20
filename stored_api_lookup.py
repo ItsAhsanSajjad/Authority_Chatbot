@@ -99,6 +99,15 @@ def _score_candidate(intent: str, domain: str, question: str,
                      last_turn_domain: str = "") -> IntentCandidate:
     """Apply heuristic scoring rules to a single (intent, domain) pair."""
     signals: _List[str] = []
+    # Comparison intent is unambiguous ("X vs Y" with 2+ resolved
+    # locations) — it must beat every other detector (challan
+    # date-range, ranking, etc.) which would otherwise hijack the
+    # query and answer for only the first location. Hard-pin high.
+    if intent and intent.startswith("insp_compare:"):
+        return IntentCandidate(
+            domain=domain, intent=intent, score=2.0,
+            matched_signals=["comparison_intent"],
+        )
     score = 0.30  # base score so any matched intent beats no-match
     pat = _DOMAIN_KW.get(domain)
     if pat and pat.search(question or ""):

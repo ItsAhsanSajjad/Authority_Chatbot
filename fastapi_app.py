@@ -748,6 +748,30 @@ def simple_ask(request: Request, body: SimpleChatRequest):
         question = st.remaining_question
         log.info("Greeting stripped: ack='%s', question='%s'", ack_prefix, question[:60])
 
+    # ── 1b. Creator-question intercept (pre-anchor) ────────────
+    # "who made you" / "who developed this bot" must short-circuit
+    # BEFORE entity anchoring. Otherwise the anchor step replaces
+    # the pronoun "you" with the prior subject ("Bahawalpur"),
+    # producing "Bahawalpur who made you" which then mis-routes to
+    # the district inspection handler.
+    try:
+        from answerer import _is_creator_question, _CREATOR_RESPONSE
+        if _is_creator_question(question):
+            log.info("Creator-question intercept: '%s'", question[:60])
+            answer_text = (ack_prefix + _CREATOR_RESPONSE) if ack_prefix else _CREATOR_RESPONSE
+            log_audit_entry(
+                request_id=rid, session_id=sid, question=question,
+                decision="creator", answer_text=answer_text,
+            )
+            return SimpleChatResponse(
+                answer=answer_text,
+                decision="answer",
+                references=[],
+                session_id=sid,
+            )
+    except Exception as e:
+        log.debug("Creator intercept skipped: %s", e)
+
     # ── 2. Extract last Q/A from client history FIRST ───────────
     # (needed for entity anchoring when session_id is not sent)
     last_question_client = None

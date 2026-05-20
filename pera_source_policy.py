@@ -30,11 +30,55 @@ _OPERATIONAL_KEYWORDS = re.compile(
     r"chall?[ae]+ns?|fine|paid|unpaid|outstanding|overdue|recover(?:ed|y)|"
     r"inspect(?:ion)?s?|warnings?|firs?|sealed|sealing|"
     r"removal\s+orders?|epo|no\s+offen[cs]es?|arrest(?:s|\s+cases?)?|"
-    r"officer|enforcer|station|tehsils?|districts?|divisions?|"
-    r"top|ranking|rank(?:ed)?|highest|lowest|"
+    r"officer|enforcer|tehsils?|districts?|divisions?|"
+    r"ranking|highest|lowest|"
     r"count|counts|total\s+actions?|"
     r"today|yesterday|last\s+week|last\s+month|"
     r"q[1-4]\s+\d{4}|fy\s*\d"
+    r")\b",
+    re.IGNORECASE,
+)
+
+# "top N <noun>" / "rank(ed) <noun>" / "top officers / top tehsils" only
+# count as operational when the trailing noun is a countable
+# operational entity. Bare "top achievements / top issues / top risks /
+# top priorities" is narrative and must NOT trip the refusal gate.
+_OPERATIONAL_TOP_RE = re.compile(
+    r"\btop\s+\d*\s*("
+    r"officer|enforcer|tehsil|district|division|station|"
+    r"performer|inspect(?:ion)?|chall?[ae]+n|fine|recover|"
+    r"sealed|fir|arrest|warning|defaulter|violator"
+    r")s?\b|"
+    r"\brank(?:ing|ed)?\s+(?:by|of)\s+("
+    r"officer|tehsil|district|division|inspect|chall?[ae]+n|fine"
+    r")",
+    re.IGNORECASE,
+)
+
+# Narrative veto — if the question is clearly asking for a list of
+# concepts / risks / decisions / achievements / bottlenecks, force
+# is_operational_query() to False so the answer routes through doc
+# RAG instead of the refusal gate.
+_NARRATIVE_VETO_RE = re.compile(
+    r"\b("
+    r"achievement|achievements|"
+    r"issue|issues|red\s+flags?|bottleneck|bottlenecks|"
+    r"risk|risks|decision|decisions|approval|approvals|"
+    r"recommendation|recommendations|priorit(?:y|ies)|"
+    r"challenge|challenges|concern|concerns|"
+    r"strategy|strategies|reason|reasons|"
+    r"why|how\s+will|how\s+does|what\s+if|"
+    r"role|roles|responsibilit(?:y|ies)|"
+    r"policy|policies|regulation|regulations|"
+    r"mandate|mandates|"
+    r"timeline|deadline|roadmap|plan|plans|"
+    r"discuss|describe|explain|outline|"
+    r"propos(?:al|als|ed)|"
+    r"composition|structure|hierarchy|"
+    r"benefit|benefits|advantage|advantages|"
+    r"objective|objectives|purpose|"
+    r"vision|mission|"
+    r"meeting|agenda|minutes"
     r")\b",
     re.IGNORECASE,
 )
@@ -43,10 +87,23 @@ _OPERATIONAL_KEYWORDS = re.compile(
 def is_operational_query(question: str) -> bool:
     """True if `question` looks like a request for operational
     counts / amounts / rankings rather than document/policy text.
+
+    Two-pass logic:
+      1. Veto first: if the question reads narrative (achievements,
+         risks, decisions, why/how, policy/mandate, etc.) it is never
+         operational regardless of any accidental keyword match.
+      2. Otherwise: any operational keyword OR a properly-qualified
+         "top N <operational noun>" pattern flips it to True.
     """
     if not question:
         return False
-    return bool(_OPERATIONAL_KEYWORDS.search(question))
+    if _NARRATIVE_VETO_RE.search(question):
+        return False
+    if _OPERATIONAL_KEYWORDS.search(question):
+        return True
+    if _OPERATIONAL_TOP_RE.search(question):
+        return True
+    return False
 
 
 def should_prefer_live_sdeo(

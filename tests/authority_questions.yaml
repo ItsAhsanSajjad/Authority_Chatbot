@@ -1,0 +1,767 @@
+# PERA Authority-level test question bank.
+# 600+ questions across 24 sections covering performance, comparison,
+# force requisition, e-challan, admin fines, price control, FIR,
+# court cases, ES operationalization, HR, police strength, logistics,
+# ADP, legal mandate, DERB, recruitment, training academy, digital
+# systems, discipline, finance, data quality, problem-questions,
+# final-test set.
+#
+# Schema per item:
+#   q     : question text (verbatim, end-user wording)
+#   tags  : list of tags  — kind:numeric|narrative|comparison|reasoning
+#                            data:db|doc|hybrid|unknown
+#                            risk:high|medium|low (board-meeting impact)
+# Section header rows have only `section` + `title`.
+---
+sections:
+
+  - id: 1
+    title: Executive / Strategic
+    items:
+      - { q: "What is the current overall performance of PERA?",                                                             tags: [kind:narrative, data:hybrid,  risk:high] }
+      - { q: "What are the top achievements of PERA so far?",                                                                tags: [kind:narrative, data:doc,     risk:high] }
+      - { q: "What are the top pending issues requiring higher authority attention?",                                        tags: [kind:narrative, data:doc,     risk:high] }
+      - { q: "Which areas are performing well?",                                                                              tags: [kind:reasoning, data:hybrid,  risk:medium] }
+      - { q: "Which areas are underperforming?",                                                                              tags: [kind:reasoning, data:hybrid,  risk:medium] }
+      - { q: "Which indicators show improvement compared with the previous report?",                                          tags: [kind:comparison, data:doc,    risk:high] }
+      - { q: "Which indicators are stagnant despite increased activity?",                                                     tags: [kind:comparison, data:doc,    risk:high] }
+      - { q: "What are the major red flags in the current report?",                                                           tags: [kind:narrative, data:doc,     risk:high] }
+      - { q: "What are the main operational bottlenecks?",                                                                    tags: [kind:narrative, data:doc,     risk:high] }
+      - { q: "What are the major financial bottlenecks?",                                                                     tags: [kind:narrative, data:doc,     risk:high] }
+      - { q: "What are the major HR bottlenecks?",                                                                            tags: [kind:narrative, data:doc,     risk:high] }
+      - { q: "What are the major legal bottlenecks?",                                                                         tags: [kind:narrative, data:doc,     risk:high] }
+      - { q: "What are the major digital/data bottlenecks?",                                                                  tags: [kind:narrative, data:doc,     risk:medium] }
+      - { q: "What decisions are urgently required from the Authority?",                                                      tags: [kind:narrative, data:doc,     risk:high] }
+      - { q: "What decisions are pending from Cabinet / Finance / Police / PPSC / ITU?",                                      tags: [kind:narrative, data:doc,     risk:high] }
+      - { q: "What issues can delay PERA's full operationalization?",                                                         tags: [kind:narrative, data:doc,     risk:high] }
+      - { q: "What is the current status of all 155 Enforcement Stations?",                                                   tags: [kind:numeric,   data:doc,     risk:high] }
+      - { q: "Why are 22 Enforcement Stations still not operational?",                                                        tags: [kind:narrative, data:doc,     risk:high] }
+      - { q: "What is PERA's current enforcement impact on ground?",                                                          tags: [kind:narrative, data:hybrid,  risk:high] }
+      - { q: "What is the difference between activity volume and actual enforcement outcome?",                                tags: [kind:reasoning, data:hybrid,  risk:high] }
+      - { q: "Are PERA's digital systems producing reliable decision-making data?",                                           tags: [kind:narrative, data:doc,     risk:medium] }
+      - { q: "Are there any inconsistencies between the two reports?",                                                        tags: [kind:comparison, data:doc,    risk:high] }
+      - { q: "What information is missing for higher authority decision-making?",                                             tags: [kind:narrative, data:doc,     risk:medium] }
+      - { q: "What are the risks if proposed approvals are delayed?",                                                         tags: [kind:narrative, data:doc,     risk:high] }
+      - { q: "What should be the next 30-day priority for PERA?",                                                             tags: [kind:narrative, data:doc,     risk:high] }
+
+  - id: 2
+    title: Performance / Results
+    items:
+      - { q: "What is PERA's total operational output till date?",                                                            tags: [kind:numeric,   data:db,      risk:high] }
+      - { q: "How many total inspections have been conducted?",                                                                tags: [kind:numeric,   data:db,      risk:high] }
+      - { q: "How much fine has been imposed?",                                                                                tags: [kind:numeric,   data:db,      risk:high] }
+      - { q: "How many challans have been issued?",                                                                            tags: [kind:numeric,   data:db,      risk:high] }
+      - { q: "How many challans have been paid?",                                                                              tags: [kind:numeric,   data:db,      risk:high] }
+      - { q: "How much challan amount is still unpaid?",                                                                      tags: [kind:numeric,   data:db,      risk:high] }
+      - { q: "What is the recovery percentage by challan count?",                                                              tags: [kind:numeric,   data:db,      risk:high] }
+      - { q: "What is the recovery percentage by amount?",                                                                    tags: [kind:numeric,   data:db,      risk:high] }
+      - { q: "How many shops have been sealed?",                                                                              tags: [kind:numeric,   data:db,      risk:high] }
+      - { q: "How many persons have been arrested?",                                                                          tags: [kind:numeric,   data:db,      risk:high] }
+      - { q: "How many FIRs have been registered?",                                                                            tags: [kind:numeric,   data:db,      risk:high] }
+      - { q: "Why are FIRs low compared with inspections?",                                                                    tags: [kind:reasoning, data:hybrid,  risk:high] }
+      - { q: "Are inspections increasing?",                                                                                    tags: [kind:comparison, data:db,     risk:medium] }
+      - { q: "Are fines increasing?",                                                                                          tags: [kind:comparison, data:db,     risk:medium] }
+      - { q: "Are sealing actions increasing?",                                                                                tags: [kind:comparison, data:db,     risk:medium] }
+      - { q: "Are arrests increasing?",                                                                                        tags: [kind:comparison, data:db,     risk:medium] }
+      - { q: "Are FIRs increasing or stagnant?",                                                                              tags: [kind:comparison, data:db,     risk:medium] }
+      - { q: "What is the average fine per inspection?",                                                                      tags: [kind:numeric,   data:db,      risk:medium] }
+      - { q: "What is the average inspection workload per PCM?",                                                              tags: [kind:numeric,   data:db,      risk:medium] }
+      - { q: "What is the average fine imposed per PCM?",                                                                    tags: [kind:numeric,   data:db,      risk:medium] }
+      - { q: "Which performance indicator is strongest?",                                                                      tags: [kind:reasoning, data:hybrid,  risk:medium] }
+      - { q: "Which performance indicator is weakest?",                                                                        tags: [kind:reasoning, data:hybrid,  risk:medium] }
+      - { q: "Is PERA's field activity producing legal outcomes?",                                                            tags: [kind:reasoning, data:hybrid,  risk:high] }
+      - { q: "Is PERA's field activity producing financial recovery?",                                                        tags: [kind:reasoning, data:hybrid,  risk:high] }
+      - { q: "Is PERA's field activity producing deterrence?",                                                                tags: [kind:reasoning, data:hybrid,  risk:high] }
+      - { q: "Which category creates the highest workload?",                                                                  tags: [kind:numeric,   data:db,      risk:medium] }
+      - { q: "Which category creates the highest revenue?",                                                                  tags: [kind:numeric,   data:db,      risk:medium] }
+      - { q: "Which category creates the highest unpaid exposure?",                                                            tags: [kind:numeric,   data:db,      risk:high] }
+      - { q: "Which category needs stricter follow-up?",                                                                      tags: [kind:reasoning, data:hybrid,  risk:medium] }
+      - { q: "What performance gaps require district-wise review?",                                                            tags: [kind:reasoning, data:hybrid,  risk:medium] }
+
+  - id: 3
+    title: Report-to-Report Comparison
+    items:
+      - { q: "What changed between the 07-May Authority Meeting deck and the 11-May Operations Report?",                      tags: [kind:comparison, data:doc,    risk:high] }
+      - { q: "Which KPIs improved between both reports?",                                                                      tags: [kind:comparison, data:doc,    risk:high] }
+      - { q: "Which KPIs remained unchanged?",                                                                                tags: [kind:comparison, data:doc,    risk:high] }
+      - { q: "Which KPIs show unusual growth?",                                                                                tags: [kind:comparison, data:doc,    risk:high] }
+      - { q: "Why did inspections increase sharply?",                                                                          tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "Why did fine imposed increase faster than inspections?",                                                        tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "Why did shop sealing increase significantly?",                                                                  tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "Why did arrests increase less than sealing?",                                                                  tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "Why did FIRs remain unchanged?",                                                                                tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "Is the increase due to actual performance or data refresh?",                                                    tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "Are both reports using the same date range?",                                                                  tags: [kind:comparison, data:doc,    risk:medium] }
+      - { q: "Are both reports using the same app sources?",                                                                  tags: [kind:comparison, data:doc,    risk:medium] }
+      - { q: "Are both reports using the same data extraction logic?",                                                        tags: [kind:comparison, data:doc,    risk:medium] }
+      - { q: "Which numbers need verification before presentation?",                                                          tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "Which changes should be highlighted as positive progress?",                                                    tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "Which changes should be flagged as data-quality issues?",                                                      tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "Which figures should not be presented without explanation?",                                                    tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "What is the trend of paid challans between reports?",                                                          tags: [kind:comparison, data:db,     risk:medium] }
+      - { q: "What is the trend of unpaid challans between reports?",                                                        tags: [kind:comparison, data:db,     risk:medium] }
+      - { q: "What is the trend of administrative fine categories?",                                                          tags: [kind:comparison, data:db,     risk:medium] }
+
+  - id: 4
+    title: Force Requisition Portal
+    items:
+      - { q: "How many total force requisitions have been received?",                                                          tags: [kind:numeric,   data:db,      risk:high] }
+      - { q: "How many force requisitions have been completed?",                                                                tags: [kind:numeric,   data:db,      risk:high] }
+      - { q: "What is the completion percentage?",                                                                            tags: [kind:numeric,   data:db,      risk:high] }
+      - { q: "How many force requisitions are pending?",                                                                      tags: [kind:numeric,   data:db,      risk:high] }
+      - { q: "What is the pending percentage?",                                                                                tags: [kind:numeric,   data:db,      risk:high] }
+      - { q: "How many requisitions were assigned to squads?",                                                                tags: [kind:numeric,   data:db,      risk:medium] }
+      - { q: "Why is squad assignment much lower than total requisitions?",                                                  tags: [kind:reasoning, data:hybrid,  risk:medium] }
+      - { q: "How many requests were rescheduled or withdrawn?",                                                              tags: [kind:numeric,   data:db,      risk:medium] }
+      - { q: "What are the reasons for rescheduled/withdrawn requests?",                                                      tags: [kind:narrative, data:doc,     risk:medium] }
+      - { q: "What is included in the 'Others' category?",                                                                    tags: [kind:narrative, data:doc,     risk:medium] }
+      - { q: "Why is the 'Others' category so high?",                                                                          tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "Which force requisition category has the highest workload?",                                                    tags: [kind:numeric,   data:db,      risk:medium] }
+      - { q: "How many requisitions are related to Anti-Encroachment?",                                                      tags: [kind:numeric,   data:db,      risk:medium] }
+      - { q: "How many requisitions are related to Price Control?",                                                          tags: [kind:numeric,   data:db,      risk:medium] }
+      - { q: "How many requisitions are related to Anti-Hoarding?",                                                          tags: [kind:numeric,   data:db,      risk:medium] }
+      - { q: "How many requisitions are related to Eviction?",                                                                tags: [kind:numeric,   data:db,      risk:medium] }
+      - { q: "How many requisitions are related to Public Nuisance?",                                                        tags: [kind:numeric,   data:db,      risk:medium] }
+      - { q: "What percentage of workload comes from Anti-Encroachment?",                                                    tags: [kind:numeric,   data:db,      risk:medium] }
+      - { q: "What percentage of workload comes from Price Control?",                                                        tags: [kind:numeric,   data:db,      risk:medium] }
+      - { q: "Are Anti-Encroachment and Price Control consuming most resources?",                                            tags: [kind:reasoning, data:db,      risk:medium] }
+      - { q: "Which category requires more squads?",                                                                          tags: [kind:reasoning, data:db,      risk:medium] }
+      - { q: "Which category has highest pending requests?",                                                                  tags: [kind:numeric,   data:db,      risk:medium] }
+      - { q: "What is the average time to complete a requisition?",                                                          tags: [kind:numeric,   data:db,      risk:medium] }
+      - { q: "Which districts have the highest requisition load?",                                                            tags: [kind:numeric,   data:db,      risk:medium] }
+      - { q: "Which districts have the highest pending requisitions?",                                                        tags: [kind:numeric,   data:db,      risk:medium] }
+      - { q: "Are requisitions being completed within SLA?",                                                                  tags: [kind:reasoning, data:hybrid,  risk:medium] }
+      - { q: "Are there any overdue requests?",                                                                                tags: [kind:numeric,   data:db,      risk:medium] }
+      - { q: "Which departments are raising the most requisitions?",                                                          tags: [kind:numeric,   data:db,      risk:medium] }
+      - { q: "What operational support is required to reduce pending requests?",                                              tags: [kind:narrative, data:doc,     risk:medium] }
+      - { q: "What should higher authority monitor weekly in Force Requisition?",                                            tags: [kind:narrative, data:doc,     risk:medium] }
+
+  - id: 5
+    title: E-Challan / Recovery
+    items:
+      - { q: "How many total e-challans have been issued?",                                                                  tags: [kind:numeric,   data:db,      risk:high] }
+      - { q: "What is the total challan amount?",                                                                            tags: [kind:numeric,   data:db,      risk:high] }
+      - { q: "How many challans have been paid?",                                                                            tags: [kind:numeric,   data:db,      risk:high] }
+      - { q: "What amount has been recovered?",                                                                              tags: [kind:numeric,   data:db,      risk:high] }
+      - { q: "How many challans remain unpaid?",                                                                              tags: [kind:numeric,   data:db,      risk:high] }
+      - { q: "What amount is still unpaid?",                                                                                  tags: [kind:numeric,   data:db,      risk:high] }
+      - { q: "What is the paid challan percentage?",                                                                          tags: [kind:numeric,   data:db,      risk:high] }
+      - { q: "What is the unpaid challan percentage?",                                                                        tags: [kind:numeric,   data:db,      risk:high] }
+      - { q: "What is the recovery rate by amount?",                                                                          tags: [kind:numeric,   data:db,      risk:high] }
+      - { q: "What is the recovery gap by amount?",                                                                          tags: [kind:numeric,   data:db,      risk:high] }
+      - { q: "Is recovery performance satisfactory?",                                                                        tags: [kind:reasoning, data:hybrid,  risk:high] }
+      - { q: "Is unpaid exposure increasing?",                                                                                tags: [kind:comparison, data:db,     risk:high] }
+      - { q: "What is the average challan amount?",                                                                          tags: [kind:numeric,   data:db,      risk:medium] }
+      - { q: "What is the average paid challan amount?",                                                                    tags: [kind:numeric,   data:db,      risk:medium] }
+      - { q: "What is the average unpaid challan amount?",                                                                  tags: [kind:numeric,   data:db,      risk:medium] }
+      - { q: "Which district has the highest unpaid challan amount?",                                                        tags: [kind:numeric,   data:db,      risk:high] }
+      - { q: "Which tehsil has the highest unpaid challan amount?",                                                          tags: [kind:numeric,   data:db,      risk:high] }
+      - { q: "Which officer has the highest unpaid challan amount?",                                                          tags: [kind:numeric,   data:db,      risk:high] }
+      - { q: "Which category has the highest unpaid challans?",                                                              tags: [kind:numeric,   data:db,      risk:high] }
+      - { q: "Which unpaid challans are older than 30 days?",                                                                tags: [kind:numeric,   data:db,      risk:medium] }
+      - { q: "Which unpaid challans are older than 60 days?",                                                                tags: [kind:numeric,   data:db,      risk:medium] }
+      - { q: "Which unpaid challans are older than 90 days?",                                                                tags: [kind:numeric,   data:db,      risk:medium] }
+      - { q: "What is the recovery ageing analysis?",                                                                        tags: [kind:numeric,   data:db,      risk:medium] }
+      - { q: "What recovery action has been taken?",                                                                          tags: [kind:narrative, data:doc,     risk:medium] }
+      - { q: "Are defaulters being followed up?",                                                                            tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "Are repeat violators being identified?",                                                                        tags: [kind:reasoning, data:db,      risk:medium] }
+      - { q: "Are paid challans deposited correctly?",                                                                        tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "Are administrative fines deposited into PERA's head of accounts?",                                              tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "What is the district-wise recovery ranking?",                                                                  tags: [kind:numeric,   data:db,      risk:medium] }
+      - { q: "What is the recommended recovery strategy?",                                                                  tags: [kind:narrative, data:doc,     risk:medium] }
+
+  - id: 6
+    title: Administrative Fine
+    items:
+      - { q: "What is the total administrative fine position?",                                                              tags: [kind:numeric,   data:db,      risk:high] }
+      - { q: "What is the Price Control administrative fine status?",                                                        tags: [kind:numeric,   data:db,      risk:high] }
+      - { q: "What is the Encroachment administrative fine status?",                                                        tags: [kind:numeric,   data:db,      risk:high] }
+      - { q: "What is the Hoarding administrative fine status?",                                                            tags: [kind:numeric,   data:db,      risk:high] }
+      - { q: "Which category has the highest total challans?",                                                              tags: [kind:numeric,   data:db,      risk:medium] }
+      - { q: "Which category has the highest total amount?",                                                                tags: [kind:numeric,   data:db,      risk:medium] }
+      - { q: "Which category has the highest paid challans?",                                                                tags: [kind:numeric,   data:db,      risk:medium] }
+      - { q: "Which category has the highest unpaid challans?",                                                              tags: [kind:numeric,   data:db,      risk:medium] }
+      - { q: "Which category has the best recovery rate?",                                                                  tags: [kind:numeric,   data:db,      risk:medium] }
+      - { q: "Which category has the weakest recovery rate?",                                                                tags: [kind:numeric,   data:db,      risk:medium] }
+      - { q: "What is the paid percentage in Price Control?",                                                                tags: [kind:numeric,   data:db,      risk:medium] }
+      - { q: "What is the unpaid percentage in Price Control?",                                                              tags: [kind:numeric,   data:db,      risk:medium] }
+      - { q: "What is the paid percentage in Encroachment?",                                                                tags: [kind:numeric,   data:db,      risk:medium] }
+      - { q: "What is the unpaid percentage in Encroachment?",                                                              tags: [kind:numeric,   data:db,      risk:medium] }
+      - { q: "What is the paid percentage in Hoarding?",                                                                    tags: [kind:numeric,   data:db,      risk:medium] }
+      - { q: "What is the unpaid percentage in Hoarding?",                                                                  tags: [kind:numeric,   data:db,      risk:medium] }
+      - { q: "Why is Hoarding volume very low?",                                                                              tags: [kind:reasoning, data:hybrid,  risk:medium] }
+      - { q: "Why did Hoarding paid challans decrease while total challans remained same?",                                  tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "Is there any reversal or correction in Hoarding data?",                                                        tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "Are administrative fine figures reconciled with e-challan figures?",                                          tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "Why is e-challan amount different from administrative fine totals?",                                          tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "Are all fines digitally captured?",                                                                            tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "Are all paid fines verified with treasury/bank data?",                                                        tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "Which category requires enforcement improvement?",                                                              tags: [kind:reasoning, data:hybrid,  risk:medium] }
+      - { q: "Which category requires recovery improvement?",                                                                tags: [kind:reasoning, data:hybrid,  risk:medium] }
+      - { q: "Which category requires data validation?",                                                                    tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "What is the total unpaid administrative fine count?",                                                          tags: [kind:numeric,   data:db,      risk:high] }
+      - { q: "What is the total administrative fine amount?",                                                                tags: [kind:numeric,   data:db,      risk:high] }
+      - { q: "What is the administrative fine trend compared with previous report?",                                        tags: [kind:comparison, data:doc,    risk:medium] }
+      - { q: "What should be escalated to higher authority?",                                                                tags: [kind:narrative, data:doc,     risk:high] }
+
+  - id: 7
+    title: Price Control Performance
+    items:
+      - { q: "How many PCMs are working?",                                                                                  tags: [kind:numeric,   data:db,      risk:high] }
+      - { q: "How many price-control inspections have been conducted?",                                                      tags: [kind:numeric,   data:db,      risk:high] }
+      - { q: "How much fine has been imposed under price control?",                                                          tags: [kind:numeric,   data:db,      risk:high] }
+      - { q: "How many shops have been sealed under price control?",                                                        tags: [kind:numeric,   data:db,      risk:high] }
+      - { q: "How many persons have been arrested under price control?",                                                    tags: [kind:numeric,   data:db,      risk:high] }
+      - { q: "How many FIRs have been registered under price control?",                                                    tags: [kind:numeric,   data:db,      risk:high] }
+      - { q: "What is the average inspection per PCM?",                                                                    tags: [kind:numeric,   data:db,      risk:medium] }
+      - { q: "What is the average fine per PCM?",                                                                          tags: [kind:numeric,   data:db,      risk:medium] }
+      - { q: "What is the average fine per price-control inspection?",                                                      tags: [kind:numeric,   data:db,      risk:medium] }
+      - { q: "What is the sealing rate per inspection?",                                                                    tags: [kind:numeric,   data:db,      risk:medium] }
+      - { q: "What is the arrest rate per inspection?",                                                                    tags: [kind:numeric,   data:db,      risk:medium] }
+      - { q: "What is the FIR rate per inspection?",                                                                        tags: [kind:numeric,   data:db,      risk:medium] }
+      - { q: "Why is FIR conversion very low?",                                                                            tags: [kind:reasoning, data:hybrid,  risk:high] }
+      - { q: "Are PCMs enforcing only through fines?",                                                                      tags: [kind:reasoning, data:hybrid,  risk:medium] }
+      - { q: "Are serious violations being escalated properly?",                                                              tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "Which districts have the highest inspections?",                                                                tags: [kind:numeric,   data:db,      risk:medium] }
+      - { q: "Which districts have the highest fines?",                                                                    tags: [kind:numeric,   data:db,      risk:medium] }
+      - { q: "Which districts have the highest sealing actions?",                                                          tags: [kind:numeric,   data:db,      risk:medium] }
+      - { q: "Which districts have the highest arrests?",                                                                  tags: [kind:numeric,   data:db,      risk:medium] }
+      - { q: "Which districts have weak enforcement despite high inspections?",                                              tags: [kind:reasoning, data:db,      risk:high] }
+      - { q: "Which districts have high fines but low recovery?",                                                            tags: [kind:reasoning, data:db,      risk:high] }
+      - { q: "Which districts have high inspections but low fines?",                                                          tags: [kind:reasoning, data:db,      risk:high] }
+      - { q: "Which PCMs are top performers?",                                                                              tags: [kind:numeric,   data:db,      risk:medium] }
+      - { q: "Which PCMs are underperforming?",                                                                              tags: [kind:numeric,   data:db,      risk:medium] }
+      - { q: "Are price control inspections properly targeted?",                                                              tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "Are repeat violators being tracked?",                                                                          tags: [kind:reasoning, data:db,      risk:medium] }
+      - { q: "Are markets with repeated violations being flagged?",                                                          tags: [kind:reasoning, data:db,      risk:medium] }
+      - { q: "What is the impact of price control inspections on compliance?",                                              tags: [kind:narrative, data:doc,     risk:medium] }
+      - { q: "What enforcement action is recommended next?",                                                                tags: [kind:narrative, data:doc,     risk:medium] }
+      - { q: "What weekly dashboard should be shown to DG/ADG?",                                                            tags: [kind:narrative, data:doc,     risk:medium] }
+
+  - id: 8
+    title: FIR / Prosecution
+    items:
+      - { q: "How many total FIRs have been registered?",                                                                  tags: [kind:numeric,   data:db,      risk:high] }
+      - { q: "How many FIRs are under investigation?",                                                                      tags: [kind:numeric,   data:db,      risk:high] }
+      - { q: "How many challans have been submitted to court?",                                                              tags: [kind:numeric,   data:db,      risk:high] }
+      - { q: "How many court decisions have been received?",                                                                tags: [kind:numeric,   data:db,      risk:high] }
+      - { q: "How many cases are pending court decision?",                                                                  tags: [kind:numeric,   data:db,      risk:high] }
+      - { q: "What is the challan completion percentage?",                                                                  tags: [kind:numeric,   data:db,      risk:medium] }
+      - { q: "What is the conviction rate?",                                                                                tags: [kind:numeric,   data:db,      risk:high] }
+      - { q: "What is the denominator of the conviction rate?",                                                              tags: [kind:numeric,   data:db,      risk:medium] }
+      - { q: "How many convictions are there in actual numbers?",                                                            tags: [kind:numeric,   data:db,      risk:high] }
+      - { q: "How many acquittals are there?",                                                                              tags: [kind:numeric,   data:db,      risk:high] }
+      - { q: "How many cases are still under investigation?",                                                                tags: [kind:numeric,   data:db,      risk:high] }
+      - { q: "Why are most FIRs still under investigation?",                                                                tags: [kind:reasoning, data:hybrid,  risk:high] }
+      - { q: "What is the average investigation completion time?",                                                          tags: [kind:numeric,   data:db,      risk:medium] }
+      - { q: "What is the average time from FIR to challan submission?",                                                    tags: [kind:numeric,   data:db,      risk:medium] }
+      - { q: "What is the average time from challan submission to court decision?",                                          tags: [kind:numeric,   data:db,      risk:medium] }
+      - { q: "Which districts have the highest FIRs?",                                                                      tags: [kind:numeric,   data:db,      risk:medium] }
+      - { q: "Which districts have low FIRs despite high inspections?",                                                      tags: [kind:reasoning, data:db,      risk:high] }
+      - { q: "Which officers have the highest FIR performance?",                                                            tags: [kind:numeric,   data:db,      risk:medium] }
+      - { q: "Which officers have pending investigations?",                                                                  tags: [kind:numeric,   data:db,      risk:medium] }
+      - { q: "Are FIRs being registered through digital system only?",                                                      tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "Are challans submitted digitally?",                                                                            tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "How many cases involved physical custody?",                                                                  tags: [kind:numeric,   data:db,      risk:medium] }
+      - { q: "Why are physical custody cases only 4?",                                                                      tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "How many cases had change of IO?",                                                                            tags: [kind:numeric,   data:db,      risk:medium] }
+      - { q: "Why is change of IO zero?",                                                                                  tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "Are prosecutors involved at early stage?",                                                                    tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "What is the prosecution success rate?",                                                                      tags: [kind:numeric,   data:db,      risk:high] }
+      - { q: "What are the main reasons for court decision pendency?",                                                      tags: [kind:narrative, data:doc,     risk:medium] }
+      - { q: "Which FIRs require legal follow-up?",                                                                          tags: [kind:numeric,   data:db,      risk:medium] }
+      - { q: "What prosecution reforms are required?",                                                                      tags: [kind:narrative, data:doc,     risk:medium] }
+
+  - id: 9
+    title: Court Cases Against PERA
+    items:
+      - { q: "How many total court cases are against PERA?",                                                                tags: [kind:numeric,   data:doc,     risk:high] }
+      - { q: "How many cases have been disposed of?",                                                                        tags: [kind:numeric,   data:doc,     risk:high] }
+      - { q: "What is the disposal rate?",                                                                                  tags: [kind:numeric,   data:doc,     risk:high] }
+      - { q: "How many cases are pending?",                                                                                tags: [kind:numeric,   data:doc,     risk:high] }
+      - { q: "What is the pending rate?",                                                                                  tags: [kind:numeric,   data:doc,     risk:high] }
+      - { q: "How many cases are pending in High Court?",                                                                    tags: [kind:numeric,   data:doc,     risk:high] }
+      - { q: "How many cases are pending in Civil Court?",                                                                  tags: [kind:numeric,   data:doc,     risk:high] }
+      - { q: "Why are most pending cases in High Court?",                                                                    tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "Which pending cases are high-risk?",                                                                          tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "Which cases have stay orders?",                                                                                tags: [kind:numeric,   data:doc,     risk:high] }
+      - { q: "Which cases can affect PERA operations?",                                                                      tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "Which cases can affect recruitment?",                                                                          tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "Which cases can affect procurement?",                                                                          tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "Which cases can affect enforcement?",                                                                          tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "Which cases can affect land acquisition?",                                                                    tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "What is the oldest pending case?",                                                                            tags: [kind:numeric,   data:doc,     risk:medium] }
+      - { q: "What is the monetary impact of pending cases?",                                                                tags: [kind:numeric,   data:doc,     risk:high] }
+      - { q: "What is the operational impact of pending cases?",                                                            tags: [kind:narrative, data:doc,     risk:high] }
+      - { q: "What is the legal strategy for High Court cases?",                                                            tags: [kind:narrative, data:doc,     risk:high] }
+      - { q: "What is the legal strategy for Civil Court cases?",                                                            tags: [kind:narrative, data:doc,     risk:high] }
+      - { q: "Are cases being actively pursued?",                                                                            tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "Are replies/comments filed on time?",                                                                          tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "Are any contempt risks involved?",                                                                            tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "Are any policy/regulation challenges involved?",                                                                tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "Which cases should be escalated to Authority?",                                                                tags: [kind:reasoning, data:doc,     risk:high] }
+
+  - id: 10
+    title: Enforcement Station Operationalization
+    items:
+      - { q: "How many Enforcement Stations are planned?",                                                                  tags: [kind:numeric,   data:doc,     risk:high] }
+      - { q: "How many Enforcement Stations are operational?",                                                              tags: [kind:numeric,   data:doc,     risk:high] }
+      - { q: "How many Enforcement Stations are still remaining?",                                                          tags: [kind:numeric,   data:doc,     risk:high] }
+      - { q: "What percentage of Enforcement Stations are operational?",                                                    tags: [kind:numeric,   data:doc,     risk:high] }
+      - { q: "Why are 22 Enforcement Stations still not operational?",                                                      tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "Which divisions have remaining non-operational ESs?",                                                          tags: [kind:numeric,   data:doc,     risk:high] }
+      - { q: "Which districts have remaining non-operational ESs?",                                                          tags: [kind:numeric,   data:doc,     risk:high] }
+      - { q: "Which tehsils have remaining non-operational ESs?",                                                            tags: [kind:numeric,   data:doc,     risk:high] }
+      - { q: "Are remaining ESs delayed due to staff shortage?",                                                              tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "Are remaining ESs delayed due to infrastructure?",                                                              tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "Are remaining ESs delayed due to logistics?",                                                                  tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "Are remaining ESs delayed due to land issues?",                                                                tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "What is the minimum requirement to operationalize an ES?",                                                    tags: [kind:narrative, data:doc,     risk:high] }
+      - { q: "Is SDEO/AC available at all ESs?",                                                                            tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "Is IO available at all ESs?",                                                                                tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "Is EO available at all ESs?",                                                                                tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "Is SSO available at all ESs?",                                                                                tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "Is Prosecutor available at all ESs?",                                                                          tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "Are Sergeants/Senior Sergeants available as per requirement?",                                                  tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "Which cadre shortage is blocking operationalization?",                                                          tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "What resources are required to make remaining ESs functional?",                                                tags: [kind:narrative, data:doc,     risk:high] }
+      - { q: "What is the deadline for operationalizing all ESs?",                                                            tags: [kind:narrative, data:doc,     risk:high] }
+      - { q: "What is the risk if remaining ESs stay non-operational?",                                                      tags: [kind:narrative, data:doc,     risk:high] }
+      - { q: "Which ESs should be prioritized first?",                                                                      tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "What decision is needed from higher authority?",                                                              tags: [kind:narrative, data:doc,     risk:high] }
+
+  - id: 11
+    title: HR / Manpower
+    items:
+      - { q: "What is the sanctioned strength of PERA HQ?",                                                                  tags: [kind:numeric,   data:doc,     risk:high] }
+      - { q: "How many HQ posts are filled?",                                                                                tags: [kind:numeric,   data:doc,     risk:high] }
+      - { q: "How many HQ posts are vacant?",                                                                                tags: [kind:numeric,   data:doc,     risk:high] }
+      - { q: "What is the HQ fill rate?",                                                                                  tags: [kind:numeric,   data:doc,     risk:high] }
+      - { q: "What is the sanctioned strength of field formation?",                                                          tags: [kind:numeric,   data:doc,     risk:high] }
+      - { q: "How many field posts are filled?",                                                                            tags: [kind:numeric,   data:doc,     risk:high] }
+      - { q: "How many field posts are vacant?",                                                                              tags: [kind:numeric,   data:doc,     risk:high] }
+      - { q: "What is the field fill rate?",                                                                                tags: [kind:numeric,   data:doc,     risk:high] }
+      - { q: "Why is field vacancy so high?",                                                                                tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "Which cadre has the highest shortage?",                                                                        tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "How many SSO posts are sanctioned?",                                                                          tags: [kind:numeric,   data:doc,     risk:medium] }
+      - { q: "How many SSO posts are filled?",                                                                              tags: [kind:numeric,   data:doc,     risk:medium] }
+      - { q: "How many SSO posts are vacant?",                                                                              tags: [kind:numeric,   data:doc,     risk:medium] }
+      - { q: "How many Prosecutor posts are sanctioned?",                                                                    tags: [kind:numeric,   data:doc,     risk:medium] }
+      - { q: "How many Prosecutor posts are filled?",                                                                        tags: [kind:numeric,   data:doc,     risk:medium] }
+      - { q: "How many Prosecutor posts are vacant?",                                                                        tags: [kind:numeric,   data:doc,     risk:medium] }
+      - { q: "How many SDEO posts are sanctioned?",                                                                          tags: [kind:numeric,   data:doc,     risk:medium] }
+      - { q: "How many SDEO posts are filled?",                                                                              tags: [kind:numeric,   data:doc,     risk:medium] }
+      - { q: "How many SDEO posts are vacant?",                                                                              tags: [kind:numeric,   data:doc,     risk:medium] }
+      - { q: "How many EO posts are sanctioned?",                                                                            tags: [kind:numeric,   data:doc,     risk:medium] }
+      - { q: "How many EO posts are filled?",                                                                                tags: [kind:numeric,   data:doc,     risk:medium] }
+      - { q: "How many EO posts are vacant?",                                                                                tags: [kind:numeric,   data:doc,     risk:medium] }
+      - { q: "How many IO posts are sanctioned?",                                                                            tags: [kind:numeric,   data:doc,     risk:medium] }
+      - { q: "How many IO posts are filled?",                                                                                tags: [kind:numeric,   data:doc,     risk:medium] }
+      - { q: "How many IO posts are vacant?",                                                                                tags: [kind:numeric,   data:doc,     risk:medium] }
+      - { q: "How many Sergeants/Senior Sergeants are required?",                                                            tags: [kind:numeric,   data:doc,     risk:medium] }
+      - { q: "How many Sergeants/Senior Sergeants have reported?",                                                            tags: [kind:numeric,   data:doc,     risk:medium] }
+      - { q: "How many Sergeants/Senior Sergeants are still short?",                                                          tags: [kind:numeric,   data:doc,     risk:medium] }
+      - { q: "What recruitment is underway through PPSC?",                                                                  tags: [kind:narrative, data:doc,     risk:medium] }
+      - { q: "What recruitment is underway through ITU?",                                                                    tags: [kind:narrative, data:doc,     risk:medium] }
+      - { q: "When will new recruits join field duty?",                                                                    tags: [kind:narrative, data:doc,     risk:medium] }
+      - { q: "How will HR shortage affect enforcement?",                                                                    tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "How will HR shortage affect digital reporting?",                                                                tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "How will HR shortage affect prosecution?",                                                                    tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "What is the priority recruitment plan?",                                                                      tags: [kind:narrative, data:doc,     risk:high] }
+
+  - id: 12
+    title: Police Personnel Strength
+    items:
+      - { q: "What is the required police strength in Phase-I?",                                                              tags: [kind:numeric,   data:doc,     risk:high] }
+      - { q: "How many police personnel orders were issued in Phase-I?",                                                      tags: [kind:numeric,   data:doc,     risk:high] }
+      - { q: "How many police personnel reported in Phase-I?",                                                                tags: [kind:numeric,   data:doc,     risk:high] }
+      - { q: "How many police personnel are non-reported in Phase-I?",                                                        tags: [kind:numeric,   data:doc,     risk:high] }
+      - { q: "What is the Phase-I reporting percentage?",                                                                    tags: [kind:numeric,   data:doc,     risk:high] }
+      - { q: "What is the required police strength in Phase-II?",                                                            tags: [kind:numeric,   data:doc,     risk:high] }
+      - { q: "How many orders were issued in Phase-II?",                                                                    tags: [kind:numeric,   data:doc,     risk:high] }
+      - { q: "How many personnel reported in Phase-II?",                                                                    tags: [kind:numeric,   data:doc,     risk:high] }
+      - { q: "How many personnel are non-reported in Phase-II?",                                                            tags: [kind:numeric,   data:doc,     risk:high] }
+      - { q: "What is the Phase-II reporting percentage?",                                                                    tags: [kind:numeric,   data:doc,     risk:high] }
+      - { q: "Why is Phase-II reporting weak?",                                                                              tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "Which category has the largest non-reporting gap?",                                                            tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "How many SI are required?",                                                                                  tags: [kind:numeric,   data:doc,     risk:medium] }
+      - { q: "How many SI have reported?",                                                                                  tags: [kind:numeric,   data:doc,     risk:medium] }
+      - { q: "How many HC are required?",                                                                                  tags: [kind:numeric,   data:doc,     risk:medium] }
+      - { q: "How many HC have reported?",                                                                                  tags: [kind:numeric,   data:doc,     risk:medium] }
+      - { q: "How many FC are required?",                                                                                  tags: [kind:numeric,   data:doc,     risk:medium] }
+      - { q: "How many FC have reported?",                                                                                  tags: [kind:numeric,   data:doc,     risk:medium] }
+      - { q: "What action is required from CPO/Police Department?",                                                          tags: [kind:narrative, data:doc,     risk:high] }
+      - { q: "How will non-reporting affect operations?",                                                                    tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "When will police deputationists be phased out?",                                                              tags: [kind:narrative, data:doc,     risk:high] }
+      - { q: "How many PERA Sergeants are needed to replace police support?",                                                tags: [kind:numeric,   data:doc,     risk:medium] }
+      - { q: "What is the risk if police support is withdrawn early?",                                                      tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "What is the risk if PERA recruitment is delayed?",                                                            tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "What should higher authority pursue with Police Department?",                                                  tags: [kind:narrative, data:doc,     risk:high] }
+
+  - id: 13
+    title: Logistics / Procurement
+    items:
+      - { q: "What is the logistics procurement status of Phase-I?",                                                          tags: [kind:narrative, data:doc,     risk:high] }
+      - { q: "Which Phase-I procurement items are 100% complete?",                                                            tags: [kind:numeric,   data:doc,     risk:medium] }
+      - { q: "Is furniture procurement complete?",                                                                          tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "Are double cabin vehicles complete?",                                                                          tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "Are single cabin vehicles complete?",                                                                          tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "Are bikes complete?",                                                                                          tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "Are uniforms complete?",                                                                                      tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "Are laptops complete?",                                                                                        tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "Are weapons complete?",                                                                                        tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "Are helmets and handcuffs complete?",                                                                          tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "Why is protective gear only partially complete?",                                                              tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "What is the status of e-bikes in Lahore?",                                                                    tags: [kind:narrative, data:doc,     risk:medium] }
+      - { q: "What is the combined Phase-I & II logistics status?",                                                          tags: [kind:narrative, data:doc,     risk:high] }
+      - { q: "Why are laptops/tablets below full readiness?",                                                                tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "Why is protective gear low?",                                                                                  tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "Why are weapons/pistols/ammunition low?",                                                                      tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "Why are bikes not fully procured?",                                                                            tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "Which logistics items are below 50%?",                                                                          tags: [kind:numeric,   data:doc,     risk:high] }
+      - { q: "Which logistics gaps directly affect field safety?",                                                            tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "Which logistics gaps affect digital reporting?",                                                                tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "Which logistics gaps affect enforcement mobility?",                                                            tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "What procurement is stuck and why?",                                                                            tags: [kind:narrative, data:doc,     risk:high] }
+      - { q: "Which procurements need Finance/P&D approval?",                                                                tags: [kind:narrative, data:doc,     risk:high] }
+      - { q: "Which procurements need tender/procurement acceleration?",                                                      tags: [kind:narrative, data:doc,     risk:high] }
+      - { q: "What decision is required from higher authority on procurement?",                                              tags: [kind:narrative, data:doc,     risk:high] }
+
+  - id: 14
+    title: ADP / Infrastructure / Land
+    items:
+      - { q: "What is the overall ADP progress?",                                                                            tags: [kind:numeric,   data:doc,     risk:high] }
+      - { q: "What is the status of Phase-I new construction?",                                                              tags: [kind:narrative, data:doc,     risk:high] }
+      - { q: "How many ESs are included in Phase-I?",                                                                        tags: [kind:numeric,   data:doc,     risk:high] }
+      - { q: "What is the total Phase-I cost?",                                                                              tags: [kind:numeric,   data:doc,     risk:high] }
+      - { q: "What is Phase-I financial progress?",                                                                          tags: [kind:numeric,   data:doc,     risk:high] }
+      - { q: "What is Phase-I physical progress?",                                                                          tags: [kind:numeric,   data:doc,     risk:high] }
+      - { q: "What funds have been released for Phase-I?",                                                                  tags: [kind:numeric,   data:doc,     risk:high] }
+      - { q: "What is progress against released funds?",                                                                    tags: [kind:numeric,   data:doc,     risk:medium] }
+      - { q: "Why is physical progress lower than financial progress?",                                                      tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "What is the status of renovation/rehabilitation?",                                                            tags: [kind:narrative, data:doc,     risk:medium] }
+      - { q: "What is renovation financial progress?",                                                                      tags: [kind:numeric,   data:doc,     risk:medium] }
+      - { q: "What is renovation physical progress?",                                                                        tags: [kind:numeric,   data:doc,     risk:medium] }
+      - { q: "What is the status of M&R?",                                                                                  tags: [kind:narrative, data:doc,     risk:medium] }
+      - { q: "What is M&R financial progress?",                                                                              tags: [kind:numeric,   data:doc,     risk:medium] }
+      - { q: "What is M&R physical progress?",                                                                              tags: [kind:numeric,   data:doc,     risk:medium] }
+      - { q: "What is the status of Phase-II new construction?",                                                              tags: [kind:narrative, data:doc,     risk:high] }
+      - { q: "How many ESs are included in Phase-II?",                                                                        tags: [kind:numeric,   data:doc,     risk:high] }
+      - { q: "What is the total Phase-II cost?",                                                                              tags: [kind:numeric,   data:doc,     risk:high] }
+      - { q: "What is Phase-II financial progress?",                                                                          tags: [kind:numeric,   data:doc,     risk:high] }
+      - { q: "What is Phase-II physical progress?",                                                                          tags: [kind:numeric,   data:doc,     risk:high] }
+      - { q: "How many Phase-II works have started?",                                                                        tags: [kind:numeric,   data:doc,     risk:medium] }
+      - { q: "Why has work started on only limited Phase-II ESs?",                                                            tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "How many AAs are completed?",                                                                                  tags: [kind:numeric,   data:doc,     risk:medium] }
+      - { q: "How many AAs are awaited?",                                                                                    tags: [kind:numeric,   data:doc,     risk:medium] }
+      - { q: "Why is there an AA mismatch between reports?",                                                                tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "How many tenders are completed?",                                                                              tags: [kind:numeric,   data:doc,     risk:medium] }
+      - { q: "How many tenders are pending?",                                                                                tags: [kind:numeric,   data:doc,     risk:medium] }
+      - { q: "What is the deadline for remaining tenders?",                                                                  tags: [kind:narrative, data:doc,     risk:high] }
+      - { q: "Which ESs have land issues?",                                                                                  tags: [kind:numeric,   data:doc,     risk:high] }
+      - { q: "Which land issues were recently resolved?",                                                                    tags: [kind:numeric,   data:doc,     risk:medium] }
+      - { q: "Which land issues still require intervention?",                                                                tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "What is the risk to ADP timelines?",                                                                            tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "What is the risk to cost escalation?",                                                                          tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "Which ADP component needs urgent monitoring?",                                                                  tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "What intervention is required from higher authority on ADP?",                                                  tags: [kind:narrative, data:doc,     risk:high] }
+
+  - id: 15
+    title: Legal Mandate
+    items:
+      - { q: "What additional duties is PERA currently performing?",                                                          tags: [kind:narrative, data:doc,     risk:high] }
+      - { q: "Which duties are being performed without legal provisioning?",                                                  tags: [kind:narrative, data:doc,     risk:high] }
+      - { q: "Why is PERA performing duties without legal cover?",                                                            tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "What is the legal risk of these duties?",                                                                      tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "What is the operational risk of these duties?",                                                                tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "What is the accountability risk?",                                                                            tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "What laws are proposed for inclusion in PERA's mandate?",                                                      tags: [kind:narrative, data:doc,     risk:high] }
+      - { q: "What is the status of inclusion of POPC, LDA, PHA, PFA, RTA, and PRA laws?",                                  tags: [kind:narrative, data:doc,     risk:high] }
+      - { q: "What is pending with Cabinet?",                                                                                tags: [kind:narrative, data:doc,     risk:high] }
+      - { q: "What has been approved by SCCLB?",                                                                            tags: [kind:narrative, data:doc,     risk:high] }
+      - { q: "What is the relevance of Section 80?",                                                                          tags: [kind:narrative, data:doc,     risk:high] }
+      - { q: "Why is legal expansion necessary?",                                                                            tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "What will happen if legal expansion is delayed?",                                                              tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "Which current duties should be stopped without legal cover?",                                                  tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "Which current duties should be regularized immediately?",                                                      tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "Which new laws will increase workload the most?",                                                              tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "What manpower is required after legal expansion?",                                                              tags: [kind:numeric,   data:doc,     risk:medium] }
+      - { q: "What logistics are required after legal expansion?",                                                            tags: [kind:numeric,   data:doc,     risk:medium] }
+      - { q: "What training is required after legal expansion?",                                                              tags: [kind:narrative, data:doc,     risk:medium] }
+      - { q: "What regulations are required after legal expansion?",                                                          tags: [kind:narrative, data:doc,     risk:medium] }
+      - { q: "Which regulations are already approved?",                                                                      tags: [kind:numeric,   data:doc,     risk:medium] }
+      - { q: "Which regulations are proposed for amendment?",                                                                tags: [kind:narrative, data:doc,     risk:medium] }
+      - { q: "Which new regulations are submitted for approval?",                                                            tags: [kind:narrative, data:doc,     risk:medium] }
+      - { q: "What is the risk of enforcement being challenged in court?",                                                  tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "What decision does Authority need to take on legal expansion?",                                                tags: [kind:narrative, data:doc,     risk:high] }
+
+  - id: 16
+    title: DERB Secretariat
+    items:
+      - { q: "Why are DERB secretariats needed?",                                                                            tags: [kind:narrative, data:doc,     risk:high] }
+      - { q: "What problem will DERB secretariats solve?",                                                                  tags: [kind:narrative, data:doc,     risk:high] }
+      - { q: "What current gaps exist at district level?",                                                                  tags: [kind:narrative, data:doc,     risk:high] }
+      - { q: "How will DERB secretariats support DCs?",                                                                      tags: [kind:narrative, data:doc,     risk:medium] }
+      - { q: "How many posts are proposed per district?",                                                                    tags: [kind:numeric,   data:doc,     risk:medium] }
+      - { q: "How many total posts are proposed for DERB?",                                                                  tags: [kind:numeric,   data:doc,     risk:medium] }
+      - { q: "Why are 2 SSOs required per district?",                                                                        tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "Why is 1 EO required per district?",                                                                          tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "Why is 1 IO required per district?",                                                                          tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "What systems will DERB secretariats monitor?",                                                                tags: [kind:narrative, data:doc,     risk:medium] }
+      - { q: "How will DERB secretariats improve PF360 reporting?",                                                          tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "How will they improve FRMS reporting?",                                                                        tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "How will they improve HRMIS and IMS reporting?",                                                                tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "What is the financial implication?",                                                                          tags: [kind:numeric,   data:doc,     risk:high] }
+      - { q: "Is the financial implication recurring?",                                                                      tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "What is the risk if DERB secretariats are not approved?",                                                      tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "Which districts should be prioritized first?",                                                                tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "Can DERB secretariats be piloted before full rollout?",                                                        tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "What approval is required from higher authority for DERB?",                                                    tags: [kind:narrative, data:doc,     risk:high] }
+      - { q: "What should be the DERB implementation timeline?",                                                            tags: [kind:narrative, data:doc,     risk:medium] }
+
+  - id: 17
+    title: Recruitment / Additional Posts
+    items:
+      - { q: "Why does PERA need 2,000 more Sergeants?",                                                                    tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "What is the current Sergeant shortage?",                                                                      tags: [kind:numeric,   data:doc,     risk:high] }
+      - { q: "What is the plan for the 2nd Sergeant batch?",                                                                tags: [kind:narrative, data:doc,     risk:high] }
+      - { q: "What is the plan for the 3rd Sergeant batch?",                                                                tags: [kind:narrative, data:doc,     risk:high] }
+      - { q: "When will the 2nd batch be recruited?",                                                                        tags: [kind:narrative, data:doc,     risk:medium] }
+      - { q: "When will the 3rd batch be recruited?",                                                                        tags: [kind:narrative, data:doc,     risk:medium] }
+      - { q: "When will recruited Sergeants be deployed in field?",                                                          tags: [kind:narrative, data:doc,     risk:medium] }
+      - { q: "How will new Sergeants help phase out police deputationists?",                                                  tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "What additional posts are proposed at Enforcement Stations?",                                                  tags: [kind:numeric,   data:doc,     risk:high] }
+      - { q: "How many additional EO posts are proposed?",                                                                  tags: [kind:numeric,   data:doc,     risk:medium] }
+      - { q: "How many additional IO posts are proposed?",                                                                  tags: [kind:numeric,   data:doc,     risk:medium] }
+      - { q: "How many additional Sergeants are proposed for Divisional/District HQ ESs?",                                  tags: [kind:numeric,   data:doc,     risk:medium] }
+      - { q: "How many additional Sergeants are proposed for Tehsil HQ ESs?",                                                tags: [kind:numeric,   data:doc,     risk:medium] }
+      - { q: "What is the total number of additional posts?",                                                                tags: [kind:numeric,   data:doc,     risk:high] }
+      - { q: "What will be the total force after approval?",                                                                  tags: [kind:numeric,   data:doc,     risk:high] }
+      - { q: "What is the annual financial implication of additional posts?",                                                tags: [kind:numeric,   data:doc,     risk:high] }
+      - { q: "Is the annual cost justified by workload?",                                                                  tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "What workload data supports additional posts?",                                                                tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "Which posts should be approved first?",                                                                        tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "What will be the deployment timeline of additional posts?",                                                    tags: [kind:narrative, data:doc,     risk:medium] }
+      - { q: "What is the risk if posts are not approved?",                                                                  tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "What is the risk if recruitment is delayed?",                                                                  tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "Can recruitment be phased?",                                                                                  tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "Which cadre is most urgent?",                                                                                tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "What final decision is needed on recruitment?",                                                                tags: [kind:narrative, data:doc,     risk:high] }
+
+  - id: 18
+    title: Training Academy
+    items:
+      - { q: "Why does PERA need its own Training Academy?",                                                                tags: [kind:narrative, data:doc,     risk:high] }
+      - { q: "Why is dependence on other training institutions a problem?",                                                  tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "How many personnel will need induction training?",                                                              tags: [kind:numeric,   data:doc,     risk:medium] }
+      - { q: "How many personnel will need refresher training?",                                                              tags: [kind:numeric,   data:doc,     risk:medium] }
+      - { q: "How many personnel will need promotion training?",                                                              tags: [kind:numeric,   data:doc,     risk:medium] }
+      - { q: "What is the duration of induction training?",                                                                  tags: [kind:numeric,   data:doc,     risk:medium] }
+      - { q: "What is the duration of refresher training?",                                                                  tags: [kind:numeric,   data:doc,     risk:medium] }
+      - { q: "What is the duration of promotion training?",                                                                  tags: [kind:numeric,   data:doc,     risk:medium] }
+      - { q: "How many Sergeants will be trained?",                                                                          tags: [kind:numeric,   data:doc,     risk:medium] }
+      - { q: "How many EOs will be trained?",                                                                                tags: [kind:numeric,   data:doc,     risk:medium] }
+      - { q: "How many IOs will be trained?",                                                                                tags: [kind:numeric,   data:doc,     risk:medium] }
+      - { q: "How many SDEOs will be trained?",                                                                              tags: [kind:numeric,   data:doc,     risk:medium] }
+      - { q: "What is the 2026 training plan?",                                                                              tags: [kind:narrative, data:doc,     risk:medium] }
+      - { q: "What is the 2027 training plan?",                                                                              tags: [kind:narrative, data:doc,     risk:medium] }
+      - { q: "What is the 2028 training plan?",                                                                              tags: [kind:narrative, data:doc,     risk:medium] }
+      - { q: "What is the 2029 training plan?",                                                                              tags: [kind:narrative, data:doc,     risk:medium] }
+      - { q: "What is the total estimated training cost?",                                                                  tags: [kind:numeric,   data:doc,     risk:high] }
+      - { q: "Does this include refresher and promotion training?",                                                          tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "What is the proposed academy capacity?",                                                                      tags: [kind:numeric,   data:doc,     risk:medium] }
+      - { q: "What infrastructure is proposed for the academy?",                                                            tags: [kind:narrative, data:doc,     risk:medium] }
+      - { q: "What is the proposed land cost?",                                                                              tags: [kind:numeric,   data:doc,     risk:medium] }
+      - { q: "What is the proposed infrastructure cost?",                                                                    tags: [kind:numeric,   data:doc,     risk:medium] }
+      - { q: "Why was the proposed academy site selected?",                                                                  tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "What are the advantages of the proposed site?",                                                                tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "What approvals are required for land acquisition?",                                                            tags: [kind:narrative, data:doc,     risk:medium] }
+      - { q: "What approvals are required for master plan?",                                                                tags: [kind:narrative, data:doc,     risk:medium] }
+      - { q: "Should academy be included in ADP?",                                                                          tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "What is the risk if academy is delayed?",                                                                    tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "Can academy train other departments?",                                                                        tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "What is the long-term institutional benefit of the academy?",                                                  tags: [kind:reasoning, data:doc,     risk:medium] }
+
+  - id: 19
+    title: Digital Systems
+    items:
+      - { q: "Which digital modules are live?",                                                                              tags: [kind:narrative, data:doc,     risk:high] }
+      - { q: "Which digital modules are under development?",                                                                tags: [kind:narrative, data:doc,     risk:high] }
+      - { q: "Is PF360 fully deployed?",                                                                                    tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "Is Force Requisition fully deployed?",                                                                          tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "Is FIR module fully deployed?",                                                                                tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "Is E-Challan module fully deployed?",                                                                          tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "Is HRMIS fully deployed?",                                                                                    tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "Is Prosecution module live?",                                                                                  tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "Is Investigation module live?",                                                                                tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "Is Duty Roster live?",                                                                                        tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "What is the status of Body Cam AI?",                                                                          tags: [kind:narrative, data:doc,     risk:medium] }
+      - { q: "What is the status of Ask PERA?",                                                                              tags: [kind:narrative, data:doc,     risk:medium] }
+      - { q: "Are all modules integrated?",                                                                                  tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "Are dashboards showing real-time data?",                                                                      tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "Are dashboards showing district-wise data?",                                                                  tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "Are dashboards showing officer-wise data?",                                                                    tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "Are dashboards showing trend data?",                                                                          tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "Are reports generated automatically?",                                                                        tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "Are there data mismatches between modules?",                                                                  tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "Is the chatbot answering from verified database data?",                                                        tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "Can Ask PERA answer higher-authority queries?",                                                                tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "Can Ask PERA compare two reporting periods?",                                                                  tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "Can Ask PERA identify red flags?",                                                                            tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "Can Ask PERA identify inconsistencies?",                                                                      tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "Can Ask PERA give action points, not only numbers?",                                                            tags: [kind:reasoning, data:doc,     risk:medium] }
+
+  - id: 20
+    title: Efficiency & Discipline
+    items:
+      - { q: "How many disciplinary proceedings have been initiated?",                                                      tags: [kind:numeric,   data:doc,     risk:medium] }
+      - { q: "How many punishments of fine were awarded?",                                                                  tags: [kind:numeric,   data:doc,     risk:medium] }
+      - { q: "How many censures were awarded?",                                                                              tags: [kind:numeric,   data:doc,     risk:medium] }
+      - { q: "How many warnings were issued under discipline?",                                                              tags: [kind:numeric,   data:doc,     risk:medium] }
+      - { q: "How many proceedings are still in process?",                                                                  tags: [kind:numeric,   data:doc,     risk:medium] }
+      - { q: "What is the percentage of warnings under discipline?",                                                        tags: [kind:numeric,   data:doc,     risk:medium] }
+      - { q: "What is the percentage of pending disciplinary proceedings?",                                                  tags: [kind:numeric,   data:doc,     risk:medium] }
+      - { q: "Which disciplinary action is most common?",                                                                    tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "Are disciplinary proceedings increasing?",                                                                    tags: [kind:comparison, data:doc,    risk:medium] }
+      - { q: "Are proceedings being finalized on time?",                                                                    tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "Which formation has the highest disciplinary cases?",                                                          tags: [kind:numeric,   data:doc,     risk:medium] }
+      - { q: "Which district has the highest disciplinary cases?",                                                          tags: [kind:numeric,   data:doc,     risk:medium] }
+      - { q: "What are the common reasons for disciplinary action?",                                                        tags: [kind:narrative, data:doc,     risk:medium] }
+      - { q: "How many serious punishments were awarded?",                                                                  tags: [kind:numeric,   data:doc,     risk:medium] }
+      - { q: "How many minor punishments were awarded?",                                                                    tags: [kind:numeric,   data:doc,     risk:medium] }
+      - { q: "How many dismissals occurred?",                                                                                tags: [kind:numeric,   data:doc,     risk:medium] }
+      - { q: "Why do E&D figures differ between reports?",                                                                  tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "Is there any backlog in disciplinary proceedings?",                                                            tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "What action is required to reduce misconduct?",                                                                tags: [kind:narrative, data:doc,     risk:medium] }
+      - { q: "What should higher authority monitor monthly in discipline?",                                                  tags: [kind:narrative, data:doc,     risk:medium] }
+
+  - id: 21
+    title: Finance / Cost / Approval
+    items:
+      - { q: "What is the total financial implication of pending proposals?",                                                tags: [kind:numeric,   data:doc,     risk:high] }
+      - { q: "What is the cost of DERB secretariats?",                                                                      tags: [kind:numeric,   data:doc,     risk:high] }
+      - { q: "What is the cost of additional ES posts?",                                                                    tags: [kind:numeric,   data:doc,     risk:high] }
+      - { q: "What is the cost of 2,000 Sergeant recruitment?",                                                              tags: [kind:numeric,   data:doc,     risk:high] }
+      - { q: "What is the training cost from 2026 to 2029?",                                                                tags: [kind:numeric,   data:doc,     risk:high] }
+      - { q: "What is the cost of PERA Training Academy land?",                                                              tags: [kind:numeric,   data:doc,     risk:high] }
+      - { q: "What is the cost of Academy infrastructure?",                                                                  tags: [kind:numeric,   data:doc,     risk:high] }
+      - { q: "What is the annual recurring cost of new posts?",                                                              tags: [kind:numeric,   data:doc,     risk:high] }
+      - { q: "What is the one-time capital cost?",                                                                          tags: [kind:numeric,   data:doc,     risk:high] }
+      - { q: "What is the cost of investigation proposal?",                                                                  tags: [kind:numeric,   data:doc,     risk:medium] }
+      - { q: "How much is proposed per FIR case?",                                                                          tags: [kind:numeric,   data:doc,     risk:medium] }
+      - { q: "What is the legal basis for cost of investigation?",                                                            tags: [kind:narrative, data:doc,     risk:medium] }
+      - { q: "What recoveries can be expected from cost of investigation?",                                                  tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "Which proposals need Finance Department concurrence?",                                                          tags: [kind:narrative, data:doc,     risk:high] }
+      - { q: "Which proposals need Cabinet approval?",                                                                      tags: [kind:narrative, data:doc,     risk:high] }
+      - { q: "Which proposals need Authority approval only?",                                                                tags: [kind:narrative, data:doc,     risk:high] }
+      - { q: "Which proposals need ADP inclusion?",                                                                          tags: [kind:narrative, data:doc,     risk:medium] }
+      - { q: "Which proposal has highest recurring cost?",                                                                  tags: [kind:numeric,   data:doc,     risk:high] }
+      - { q: "Which proposal has highest capital cost?",                                                                    tags: [kind:numeric,   data:doc,     risk:high] }
+      - { q: "Which proposal should be prioritized first?",                                                                tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "Can approvals be phased to reduce financial burden?",                                                          tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "What is the risk of not approving funds?",                                                                    tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "What is the risk of delayed fund release?",                                                                    tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "What is the comparison between released funds and progress?",                                                  tags: [kind:comparison, data:doc,    risk:high] }
+      - { q: "What decision note should be prepared for Finance Department?",                                                tags: [kind:narrative, data:doc,     risk:high] }
+
+  - id: 22
+    title: Data Quality / Validation
+    items:
+      - { q: "Are all figures reconciled between both reports?",                                                              tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "Why do some figures differ between the 07-May and 11-May reports?",                                            tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "Are all date ranges clearly mentioned?",                                                                      tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "Are 'till date' figures using the same cutoff date?",                                                          tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "Are both apps included in Price Control data?",                                                                tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "Are PCM and PF360 data merged correctly?",                                                                    tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "Are e-challan and administrative fine data connected?",                                                        tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "Are paid challans verified with payment records?",                                                            tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "Are unpaid challans updated in real time?",                                                                    tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "Why did Hoarding paid challans reduce?",                                                                      tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "Why did Hoarding unpaid challans increase?",                                                                  tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "Why is the 'Others' category in requisitions so large?",                                                      tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "Are screenshots being used instead of structured data?",                                                        tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "Are FIR 2025 and 2026 figures separately queryable?",                                                          tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "Are district-wise breakups available?",                                                                        tags: [kind:reasoning, data:db,      risk:medium] }
+      - { q: "Are tehsil-wise breakups available?",                                                                          tags: [kind:reasoning, data:db,      risk:medium] }
+      - { q: "Are officer-wise breakups available?",                                                                        tags: [kind:reasoning, data:db,      risk:medium] }
+      - { q: "Are monthly trend charts available?",                                                                          tags: [kind:reasoning, data:db,      risk:medium] }
+      - { q: "Are ageing reports available?",                                                                                tags: [kind:reasoning, data:db,      risk:medium] }
+      - { q: "Are all dashboards pulling from the same source of truth?",                                                    tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "Is there a data dictionary for every KPI?",                                                                  tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "Is there an approved formula for every percentage?",                                                            tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "Are duplicate records possible?",                                                                              tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "Are deleted/reversed challans tracked?",                                                                      tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "What data should be cleaned before senior review?",                                                            tags: [kind:narrative, data:doc,     risk:medium] }
+
+  - id: 23
+    title: Problem Questions Authority Will Ask Directly
+    items:
+      - { q: "Why are 22 Enforcement Stations still not operational?",                                                        tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "Why is Phase-II physical progress low?",                                                                      tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "Why are some land issues still unresolved?",                                                                  tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "Why is protective gear procurement still low?",                                                                tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "Why are weapons and ammunition not fully procured?",                                                          tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "Why is field formation still short of manpower?",                                                              tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "Why is Phase-II police personnel reporting weak?",                                                              tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "Why are FIRs not increasing despite inspections increasing?",                                                  tags: [kind:reasoning, data:hybrid,  risk:high] }
+      - { q: "Why is Rs. 76M+ challan amount still unpaid?",                                                                tags: [kind:reasoning, data:hybrid,  risk:high] }
+      - { q: "Why is the 'Others' category so high in force requisitions?",                                                  tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "Why is Hoarding data inconsistent between paid/unpaid challans?",                                              tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "Why are so many FIRs still under investigation?",                                                              tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "Why are most pending court cases in High Court?",                                                              tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "Why are duties being performed without legal provisioning?",                                                    tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "Why does PERA need more posts if current posts are still vacant?",                                            tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "Why does PERA need its own academy instead of existing training institutions?",                                tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "Why is additional annual expenditure justified?",                                                              tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "Why is legal expansion necessary now?",                                                                      tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "Why is DERB secretariat needed in every district?",                                                            tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "Why should Authority approve additional 791 posts?",                                                            tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "Why should 2,000 more Sergeants be recruited?",                                                                tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "What will happen if these approvals are delayed?",                                                              tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "What is the actual impact of PERA on public compliance?",                                                      tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "What are the top 5 risks for the next quarter?",                                                                tags: [kind:narrative, data:doc,     risk:high] }
+      - { q: "What are the top 5 decisions required today?",                                                                tags: [kind:narrative, data:doc,     risk:high] }
+
+  - id: 24
+    title: Best Final Test Questions
+    items:
+      - { q: "Give me a complete executive performance summary of PERA.",                                                    tags: [kind:narrative, data:hybrid,  risk:high] }
+      - { q: "What are the top achievements and top issues in the latest PERA report?",                                      tags: [kind:narrative, data:doc,     risk:high] }
+      - { q: "Compare the latest Operations Report with the 4th Authority Meeting report.",                                  tags: [kind:comparison, data:doc,    risk:high] }
+      - { q: "What changed in Price Control performance between both reports?",                                              tags: [kind:comparison, data:doc,    risk:high] }
+      - { q: "Why did inspections increase but FIRs remain the same?",                                                        tags: [kind:reasoning, data:hybrid,  risk:high] }
+      - { q: "What is the current e-challan recovery position?",                                                              tags: [kind:numeric,   data:db,      risk:high] }
+      - { q: "How much unpaid challan amount is pending?",                                                                  tags: [kind:numeric,   data:db,      risk:high] }
+      - { q: "Which administrative fine category has the weakest recovery?",                                                tags: [kind:numeric,   data:db,      risk:high] }
+      - { q: "Is there any inconsistency in administrative fine data?",                                                      tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "What is the status of Force Requisition Portal?",                                                              tags: [kind:narrative, data:doc,     risk:high] }
+      - { q: "Which force requisition category has the highest workload?",                                                  tags: [kind:numeric,   data:db,      risk:medium] }
+      - { q: "Why is the Others category high in force requisitions?",                                                        tags: [kind:reasoning, data:doc,     risk:medium] }
+      - { q: "What is the status of court cases against PERA?",                                                              tags: [kind:narrative, data:doc,     risk:high] }
+      - { q: "What is the FIR and prosecution performance?",                                                                  tags: [kind:narrative, data:hybrid,  risk:high] }
+      - { q: "What percentage of FIRs are still under investigation?",                                                        tags: [kind:numeric,   data:db,      risk:high] }
+      - { q: "What is the current status of 155 Enforcement Stations?",                                                      tags: [kind:numeric,   data:doc,     risk:high] }
+      - { q: "Why are 22 Enforcement Stations still remaining?",                                                              tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "What is the HR vacancy position in HQ and field?",                                                              tags: [kind:numeric,   data:doc,     risk:high] }
+      - { q: "Which cadre has the highest manpower shortage?",                                                                tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "What is the police personnel reporting status?",                                                                tags: [kind:numeric,   data:doc,     risk:high] }
+      - { q: "Why is Phase-II police reporting weak?",                                                                      tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "What is the logistics procurement status?",                                                                    tags: [kind:narrative, data:doc,     risk:high] }
+      - { q: "Which procurement items are below required readiness?",                                                        tags: [kind:numeric,   data:doc,     risk:high] }
+      - { q: "What is the ADP progress of Phase-I and Phase-II?",                                                            tags: [kind:numeric,   data:doc,     risk:high] }
+      - { q: "Which ADP works are delayed?",                                                                                tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "What are the land issues in Phase-I and Phase-II?",                                                              tags: [kind:narrative, data:doc,     risk:high] }
+      - { q: "What additional duties is PERA performing without legal provisioning?",                                        tags: [kind:narrative, data:doc,     risk:high] }
+      - { q: "What laws are proposed for inclusion in PERA's mandate?",                                                      tags: [kind:narrative, data:doc,     risk:high] }
+      - { q: "Why are DERB secretariats required?",                                                                          tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "What is the financial implication of DERB secretariats?",                                                      tags: [kind:numeric,   data:doc,     risk:high] }
+      - { q: "Why does PERA need 2,000 more Sergeants?",                                                                    tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "What additional posts are proposed at Enforcement Stations?",                                                  tags: [kind:numeric,   data:doc,     risk:high] }
+      - { q: "What is the financial implication of additional posts?",                                                        tags: [kind:numeric,   data:doc,     risk:high] }
+      - { q: "Why does PERA need a Training Academy?",                                                                      tags: [kind:reasoning, data:doc,     risk:high] }
+      - { q: "What is the training roadmap from 2026 to 2030?",                                                              tags: [kind:narrative, data:doc,     risk:high] }
+      - { q: "What is the estimated cost of PERA Academy?",                                                                  tags: [kind:numeric,   data:doc,     risk:high] }
+      - { q: "What new regulations are proposed for approval?",                                                              tags: [kind:narrative, data:doc,     risk:high] }
+      - { q: "What is the status of STRIKE Enforcement Station?",                                                            tags: [kind:narrative, data:doc,     risk:high] }
+      - { q: "What is the cost of investigation mechanism?",                                                                tags: [kind:numeric,   data:doc,     risk:medium] }
+      - { q: "What decisions are required from the Authority in this meeting?",                                              tags: [kind:narrative, data:doc,     risk:high] }

@@ -69,6 +69,58 @@ def _get_db():
         return None
 
 
+# ── Canonical dashboard-tile source ─────────────────────────
+# PCM /dashboard-counts with FromDate/ToDate/TehsilId (CAPITALISED
+# params, ISO `YYYY-MM-DDTHH:MM`) returns the EXACT figures the
+# PERA360 DC dashboard tiles show — challans, fine, paid/unpaid
+# counts + amounts, sealed, warnings, arrests, inspections — in a
+# single call per tehsil. This is the authoritative source; the
+# SDEO sdeo-dashboard/* endpoints lag by the newly-issued challans
+# that have not yet propagated, so they under-report.
+def _fetch_pcm_dashboard_counts(
+    tid: int,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+) -> Dict[str, Any]:
+    """One PCM dashboard-counts call. Returns a normalised dict.
+    Date-filtered when start/end supplied; all-time otherwise.
+    `paid_n`/`unpaid_n` are the dashboard's own counts (already
+    correct — no derivation needed)."""
+    out = {
+        "tehsil_id": tid,
+        "inspections": 0, "challans": 0, "fine": 0.0,
+        "paid_n": 0, "unpaid_n": 0,
+        "paid_amt": 0.0, "unpaid_amt": 0.0,
+        "sealed": 0, "warnings": 0, "arrests": 0, "pcm": 0,
+        "err": None,
+    }
+    params: Dict[str, Any] = {"TehsilId": tid}
+    if start_date and end_date:
+        params["FromDate"] = f"{start_date.isoformat()}T00:00"
+        params["ToDate"] = f"{end_date.isoformat()}T23:59"
+    try:
+        r = requests.get(
+            PCM_DASHBOARD_COUNTS, params=params,
+            headers=_HEADERS, timeout=_API_TIMEOUT,
+        )
+        r.raise_for_status()
+        j = r.json() if isinstance(r.json(), dict) else {}
+        out["inspections"] = int(j.get("totalInspections") or 0)
+        out["challans"]    = int(j.get("totalChallans") or 0)
+        out["fine"]        = float(j.get("totalFineAmount") or 0)
+        out["paid_n"]      = int(j.get("paidChallans") or 0)
+        out["unpaid_n"]    = int(j.get("unPaidChallans") or 0)
+        out["paid_amt"]    = float(j.get("paidChallanAmount") or 0)
+        out["unpaid_amt"]  = float(j.get("unPaidChallanAmount") or 0)
+        out["sealed"]      = int(j.get("totalSealed") or 0)
+        out["warnings"]    = int(j.get("totalWarnings") or 0)
+        out["arrests"]     = int(j.get("totalArrest") or 0)
+        out["pcm"]         = int(j.get("totalPCM") or 0)
+    except Exception as e:
+        out["err"] = str(e)
+    return out
+
+
 # ── Freshness footer — user-facing format ───────────────────
 # Renders the inspection-data snapshot timestamp in the same wording
 # the frontend already accepted: "Data last updated: 14 May 2026,
@@ -150,6 +202,181 @@ _ENFORCER_KEYWORDS = re.compile(
 def _detect_enforcer_intent(question: str) -> bool:
     """True when the user is asking about enforcer / force-deployed count."""
     return bool(_ENFORCER_KEYWORDS.search(question or ""))
+
+
+# Lightweight challan-keyword sniff used by the date-ranged
+# short-circuit in `_query_insp_location`. Mirrors the regex from
+# `_RANK_METRIC_MAP["challans"]` so the two detectors agree on what
+# counts as a challan-focused question.
+_FOCUSED_CHALLAN_KEYWORDS = re.compile(
+    r"\bch[ae]+l+a+n+s?\b",
+    re.I,
+)
+
+
+def _detect_focused_challan_keyword(question: str) -> bool:
+    """True when the question explicitly names 'challan(s)'."""
+    return bool(_FOCUSED_CHALLAN_KEYWORDS.search(question or ""))
+
+
+# Single-metric detection for the PCM dashboard-counts focused path.
+# Maps a keyword to the PCM-supported metric. Only metrics that the
+# PCM /dashboard-counts endpoint actually returns are listed —
+# sealed / warnings / challans / arrests / inspections. FIR,
+# no-offenses, EPO, removal-order are NOT in that endpoint so they
+# fall through to the existing SDEO path.
+_PCM_FOCUS_METRICS = [
+    ("sealed",      re.compile(r"\bseal(?:ed|ing)?\b|\bsealed\s+(?:cases?|premises?|shops?)\b", re.I)),
+    ("warnings",    re.compile(r"\bwarning(?:s)?\b", re.I)),
+    ("arrests",     re.compile(r"\barrest(?:ed|s)?\b|\barrest\s+cases?\b|\bgiraftari", re.I)),
+    ("challans",    re.compile(r"\bch[ae]+l+a+n+s?\b", re.I)),
+    ("inspections", re.compile(r"\binspect(?:ion)?s?\b|\bmuayina\b", re.I)),
+]
+_PCM_FOCUS_BROAD = re.compile(
+    r"\b(summary|breakdown|overview|all|full|detailed?|complete|"
+    r"performance|report|dashboard|card|kpis?|"
+    r"recovery|fine|paid|unpaid)\b",
+    re.I,
+)
+
+
+def _detect_pcm_focus_metric(question: str) -> Optional[str]:
+    """Return the single PCM-supported metric the user asked about,
+    or None when zero / multiple metrics match, or when the question
+    is a broad multi-metric request (summary / breakdown / etc.).
+
+    'challans' is intentionally excluded here — the dedicated
+    focused-challan branch handles it with the wider recovery table.
+    """
+    if not question:
+        return None
+    if _PCM_FOCUS_BROAD.search(question):
+        return None
+    hits = [m for m, rx in _PCM_FOCUS_METRICS if rx.search(question)]
+    if len(hits) != 1:
+        return None
+    metric = hits[0]
+    # Let the richer challan path own challan-only queries.
+    if metric == "challans":
+        return None
+    return metric
+
+
+def _query_focused_metric_location(
+    db, level: str, name: str, metric: str,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    question: str = "",
+) -> Dict[str, Any]:
+    """Focused single-metric per-tehsil table for a district/division.
+
+    Uses PCM /dashboard-counts per child tehsil so values match the
+    PERA360 dashboard tiles. `metric` is one of
+    sealed | warnings | arrests | inspections.
+    """
+    from datetime import date as _date, datetime as _dt
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    source_id = f"insp_{level}:{name}"
+    _LABELS = {
+        "sealed":      ("Sealed Premises", "premises sealed"),
+        "warnings":    ("Warnings", "warnings issued"),
+        "arrests":     ("Arrests", "arrests made"),
+        "inspections": ("Inspections", "inspections conducted"),
+    }
+    col_label, phrase = _LABELS.get(metric, (metric.title(), metric))
+
+    # Resolve target tehsils. Tehsil-level → single row; district /
+    # division → all child tehsils.
+    try:
+        if level == "tehsil":
+            tehsils = db.fetch_all(
+                "SELECT tehsil_id, tehsil_name FROM dim_tehsil "
+                "WHERE tehsil_name = %s",
+                (name,),
+            ) or []
+        elif level == "district":
+            tehsils = db.fetch_all(
+                "SELECT t.tehsil_id, t.tehsil_name FROM dim_tehsil t "
+                "JOIN dim_district d ON d.district_id = t.district_id "
+                "WHERE d.district_name = %s ORDER BY t.tehsil_name",
+                (name,),
+            ) or []
+        else:  # division
+            tehsils = db.fetch_all(
+                "SELECT t.tehsil_id, t.tehsil_name FROM dim_tehsil t "
+                "JOIN dim_district d ON d.district_id = t.district_id "
+                "JOIN dim_division v ON v.division_id = d.division_id "
+                "WHERE v.division_name = %s ORDER BY t.tehsil_name",
+                (name,),
+            ) or []
+    except Exception as e:
+        log.warning("focused-metric tehsil resolve failed: %s", e)
+        tehsils = []
+
+    if not tehsils:
+        return {
+            "source_id": source_id,
+            "records": [],
+            "formatted_context": (
+                f"No tehsils found under {level} '{name}'.\n"
+            ),
+        }
+
+    def _fetch(tid: int, tname: str) -> Dict[str, Any]:
+        c = _fetch_pcm_dashboard_counts(tid, start_date, end_date)
+        return {"tehsil": tname, "value": int(c.get(metric) or 0)}
+
+    rows_out: List[Dict[str, Any]] = []
+    with ThreadPoolExecutor(max_workers=min(8, max(2, len(tehsils)))) as ex:
+        futs = [ex.submit(_fetch, t["tehsil_id"], t["tehsil_name"])
+                for t in tehsils]
+        for f in as_completed(futs):
+            rows_out.append(f.result())
+
+    rows_out.sort(key=lambda x: x["value"], reverse=True)
+    total = sum(r["value"] for r in rows_out)
+
+    has_dates = bool(start_date and end_date)
+    scope = (f" ({start_date.strftime('%d %b %Y')} – "
+             f"{end_date.strftime('%d %b %Y')})") if has_dates else " (all-time)"
+
+    if level == "tehsil":
+        intro = (
+            f"In {name} Tehsil{scope}, PERA recorded "
+            f"{total:,} {phrase}."
+        )
+        # Single-row breakdown is redundant for a tehsil — skip table.
+        body = ""
+    else:
+        intro = (
+            f"In the {name} {level.title()}{scope}, PERA recorded "
+            f"{total:,} {phrase} across {len(rows_out)} tehsil(s)."
+        )
+        body = f"\n\nTehsil-wise {col_label}:\n\n"
+        body += f"| Tehsil | {col_label} |\n|---|---:|\n"
+        for r in rows_out:
+            body += f"| {r['tehsil']} | {r['value']:,} |\n"
+        body += f"| **Total** | **{total:,}** |\n"
+    now = _dt.now()
+    h = now.hour
+    ampm = "PM" if h >= 12 else "AM"
+    h12 = ((h + 11) % 12) + 1
+    body += (
+        f"\nData last updated: {now.day} {_MONTH_NAMES[now.month - 1]} "
+        f"{now.year}, {h12}:{now.minute:02d} {ampm}.\n"
+    )
+
+    return {
+        "source_id": source_id,
+        "records": rows_out,
+        "formatted_context": (
+            f"{col_label} — {level.title()}: {name}{scope}\n"
+            + "=" * 50 + "\n"
+            + f"Total {col_label}: {total:,}\n"
+        ),
+        "direct_answer": intro + body,
+    }
 
 
 _INSP_KEYWORDS = re.compile(
@@ -264,6 +491,21 @@ def _detect_location(question: str) -> Optional[Dict[str, str]]:
     """Return {'level': ..., '<level>_name': ...} or None."""
     _load_location_cache()
     q_lower = question.lower()
+    # Suffix-alias normalisation. Users routinely abbreviate tehsil
+    # suffixes: "lahore cant" → "Lahore Cantt", "model twn" → "Model
+    # Town". Without this pre-pass, substring matching falls through
+    # to the parent district and "lahore cant" mis-routes to the
+    # whole Lahore district.
+    _SUFFIX_ALIASES = [
+        (r"\bcant\b",   "cantt"),   # cant → cantt
+        (r"\bcantnt\b", "cantt"),
+        (r"\btwn\b",    "town"),
+        (r"\bcty\b",    "city"),
+        (r"\bsdr\b",    "saddar"),
+        (r"\bsadar\b",  "saddar"),  # alt spelling
+    ]
+    for pat, repl in _SUFFIX_ALIASES:
+        q_lower = re.sub(pat, repl, q_lower)
 
     # ── pera_entities alias resolver runs FIRST (production wiring) ──
     # Catches D.G. Khan / DG Khan / Dera Ghazi Khan and any other alias
@@ -272,7 +514,7 @@ def _detect_location(question: str) -> Optional[Dict[str, str]]:
     # only carries division names, so promoting to division on a
     # district query would be wrong.
     _explicit_non_division = re.search(
-        r"\b(district|tehsil[s]?|station[s]?)\b", q_lower,
+        r"\b(districts?|tehsil[s]?|station[s]?)\b", q_lower,
     )
     if not _explicit_non_division:
         try:
@@ -283,10 +525,14 @@ def _detect_location(question: str) -> Optional[Dict[str, str]]:
         except Exception:
             pass
 
-    # If user explicitly says "division" / "district" / "tehsil", respect that.
-    # PERA also calls tehsils "stations" colloquially in the dashboard UI.
-    explicit_div = re.search(r"\bdivision\b", q_lower)
-    explicit_dist = re.search(r"\bdistrict\b", q_lower)
+    # If user explicitly says "division(s)" / "district(s)" / "tehsil(s)" /
+    # "station(s)", respect that. The trailing `s?` matters — "Gujrat
+    # districts" (plural) must be detected as district level, otherwise
+    # the loop falls through to the tehsil-first default which would
+    # mis-route to `insp_tehsil:Gujrat` since Gujrat is BOTH a district
+    # and a tehsil name.
+    explicit_div = re.search(r"\bdivisions?\b", q_lower)
+    explicit_dist = re.search(r"\bdistricts?\b", q_lower)
     explicit_teh = re.search(r"\btehsil[s]?\b|\bstation[s]?\b", q_lower)
 
     def _tehsil_token_match(tname: str) -> bool:
@@ -330,6 +576,143 @@ def _detect_location(question: str) -> Optional[Dict[str, str]]:
         if dv.lower() in q_lower:
             return {"level": "division", "division_name": dv}
     return None
+
+
+# ── Comparison detection (multi-location queries) ───────────
+_COMPARISON_KEYWORDS = re.compile(
+    r"\b("
+    r"vs|versus|"
+    r"compare|comparison|compar(?:ing|e)|"
+    r"between|"
+    r"side[\s-]?by[\s-]?side|"
+    r"muqabla|moqabla|muqabila|"
+    r"vs\.|"
+    r"or\s+(?:between|in)|"
+    r"and\s+(?:between|in)"
+    r")\b",
+    re.I,
+)
+
+
+def _detect_comparison_intent(question: str) -> bool:
+    """True when user wants to compare two+ locations (or two periods)."""
+    if not question:
+        return False
+    if _COMPARISON_KEYWORDS.search(question):
+        return True
+    # Even without an explicit keyword, two location names separated
+    # by " and " counts as a comparison request. We don't trigger here
+    # — too aggressive — but the multi-location parser will still
+    # return both, so downstream code can detect the case.
+    return False
+
+
+def _detect_multiple_locations(question: str) -> List[Dict[str, str]]:
+    """Return a list of {level, <level>_name} for every location
+    mentioned in the question. De-duplicates and preserves order.
+
+    Recognises tehsils first (since users often pair tehsil names
+    against district names), then districts, then divisions. Reuses
+    the same suffix-alias normalisation as `_detect_location`.
+    """
+    _load_location_cache()
+    if not question:
+        return []
+    q_lower = question.lower()
+    _SUFFIX_ALIASES = [
+        (r"\bcant\b",   "cantt"),
+        (r"\bcantnt\b", "cantt"),
+        (r"\btwn\b",    "town"),
+        (r"\bcty\b",    "city"),
+        (r"\bsdr\b",    "saddar"),
+        (r"\bsadar\b",  "saddar"),
+    ]
+    for pat, repl in _SUFFIX_ALIASES:
+        q_lower = re.sub(pat, repl, q_lower)
+
+    matched: List[Dict[str, str]] = []
+    seen: set = set()
+
+    # Build (start_position, level, name) tuples so the final list
+    # preserves the order locations were mentioned.
+    candidates: List[Tuple[int, str, str]] = []
+    for t in (_TEHSIL_NAMES or []):
+        pos = q_lower.find(t.lower())
+        if pos >= 0:
+            candidates.append((pos, "tehsil", t))
+    for d in (_DISTRICT_NAMES or []):
+        pos = q_lower.find(d.lower())
+        if pos >= 0:
+            candidates.append((pos, "district", d))
+    for dv in (_DIVISION_NAMES or []):
+        pos = q_lower.find(dv.lower())
+        if pos >= 0:
+            candidates.append((pos, "division", dv))
+
+    # Sort by position, prefer the longest match per character span
+    # so "Lahore City" is preferred over "Lahore" when both match.
+    candidates.sort(key=lambda x: (x[0], -len(x[2])))
+
+    # Walk left-to-right, dropping matches whose span overlaps a name
+    # already accepted at the same start position. Keeps "Lahore
+    # Cantt" but drops the bare "Lahore" inside it.
+    consumed_spans: List[Tuple[int, int]] = []
+    for pos, level, name in candidates:
+        span = (pos, pos + len(name))
+        overlap = any(
+            not (span[1] <= s[0] or span[0] >= s[1])
+            for s in consumed_spans
+        )
+        if overlap:
+            continue
+        consumed_spans.append(span)
+        key = (level, name)
+        if key in seen:
+            continue
+        seen.add(key)
+        matched.append({"level": level, f"{level}_name": name})
+
+    # Qualifier-drop. When the user says "lahore wahga vs lahore city"
+    # they mean "Wahga (in Lahore) vs Lahore City (in Lahore)" — the
+    # standalone "Lahore" district mention is a qualifier, not a
+    # comparison target. Drop a district from the result list when
+    # one of its child tehsils is also in the list. Same for a
+    # division whose child district/tehsil is in the list.
+    if len(matched) >= 2:
+        try:
+            from analytics_db import get_analytics_db
+            _db = get_analytics_db()
+            if _db is not None:
+                tehsil_names = [m["tehsil_name"] for m in matched
+                                if m["level"] == "tehsil"]
+                district_names = [m["district_name"] for m in matched
+                                  if m["level"] == "district"]
+                # Build parent district set for the matched tehsils.
+                parent_districts_of_tehsils: set = set()
+                if tehsil_names:
+                    rows = _db.fetch_all(
+                        "SELECT d.district_name "
+                        "FROM dim_tehsil t "
+                        "JOIN dim_district d ON d.district_id = t.district_id "
+                        "WHERE t.tehsil_name = ANY(%s)",
+                        (tehsil_names,),
+                    ) or []
+                    parent_districts_of_tehsils = {
+                        r["district_name"] for r in rows
+                    }
+                # Drop districts whose tehsils are already in the list.
+                pruned: List[Dict[str, str]] = []
+                for m in matched:
+                    if (m["level"] == "district"
+                            and m["district_name"] in parent_districts_of_tehsils):
+                        continue
+                    pruned.append(m)
+                if len(pruned) >= 2:
+                    matched = pruned
+        except Exception:
+            pass
+
+    return matched
 
 
 # ── Officer name cache (from officer_inspection_record + officer_inspection_detail) ──
@@ -666,8 +1049,40 @@ def _extract_date_range(question: str) -> Tuple[Optional[date], Optional[date]]:
     Strategy (Phase-1 fix): try the canonical `pera_dates.parse_date_range`
     first. Fall back to the legacy challan parser only when the canonical
     parser returns None, so existing callers that depend on legacy formats
-    keep working.
+    keep working. As a final fallback, recognise bare month names
+    ("april", "april month", "in april") and map them to the most
+    recently completed occurrence of that month — users frequently
+    drop the year when asking for a recent period.
     """
+    # Normalise common month-name typos / spellings BEFORE parsing so
+    # "fab" → "feb", "marhc" → "march" etc. don't silently fail and
+    # collapse the range to a single day.
+    if question:
+        _MONTH_TYPOS = [
+            (r"\bfab(?:ruary)?\b",   "february"),
+            (r"\bfeb(?:rurary|rary|uary)?\b", "february"),
+            (r"\bjanuray\b",         "january"),
+            (r"\bjnauary\b",         "january"),
+            (r"\bmarhc\b",           "march"),
+            (r"\bmarch?h\b",         "march"),
+            (r"\bapril?l\b",         "april"),
+            (r"\baprl\b",            "april"),
+            (r"\bjune?e\b",          "june"),
+            (r"\bjuly?y\b",          "july"),
+            (r"\bagust\b",           "august"),
+            (r"\baugst\b",           "august"),
+            (r"\bseptmber\b",        "september"),
+            (r"\bseptember?r\b",     "september"),
+            (r"\boctuber\b",         "october"),
+            (r"\bnovmber\b",         "november"),
+            (r"\bdecmber\b",         "december"),
+            (r"\bdecember?r\b",      "december"),
+        ]
+        _qn = question
+        for pat, repl in _MONTH_TYPOS:
+            _qn = re.sub(pat, repl, _qn, flags=re.I)
+        question = _qn
+
     try:
         from pera_dates import parse_date_range
         dr = parse_date_range(question)
@@ -684,6 +1099,45 @@ def _extract_date_range(question: str) -> Tuple[Optional[date], Optional[date]]:
             return result
     except ImportError:
         pass
+
+    # Bare-month fallback. "april" / "april month" / "in april" / "of
+    # april" map to the most recent occurrence — current year when the
+    # month has already started/ended, otherwise the previous year.
+    if question:
+        _MONTHS = {
+            "january": 1, "jan": 1, "february": 2, "feb": 2,
+            "march": 3, "mar": 3, "april": 4, "apr": 4,
+            "may": 5, "june": 6, "jun": 6,
+            "july": 7, "jul": 7, "august": 8, "aug": 8,
+            "september": 9, "sep": 9, "sept": 9,
+            "october": 10, "oct": 10, "november": 11, "nov": 11,
+            "december": 12, "dec": 12,
+        }
+        from datetime import date as _date
+        from calendar import monthrange
+        today = _date.today()
+        m = re.search(
+            r"\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|"
+            r"may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t|tember)?|"
+            r"oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b",
+            question.lower(),
+        )
+        if m:
+            mn = _MONTHS.get(m.group(1))
+            if mn:
+                # Most recent year where that month has BEGUN. If the
+                # month is the current month or earlier in this year,
+                # use this year. Otherwise step back a year.
+                year = today.year if mn <= today.month else today.year - 1
+                last_day = monthrange(year, mn)[1]
+                # Cap the end date at today when the month is the
+                # current (in-progress) month so we don't claim future
+                # data we don't have.
+                end_day = (today.day
+                           if (year == today.year and mn == today.month)
+                           else last_day)
+                return (_date(year, mn, 1), _date(year, mn, end_day))
+
     return (None, None)
 
 
@@ -726,6 +1180,18 @@ def detect_inspection_intent(question: str) -> Optional[str]:
     # is missing or misspelled. Higher-authority officials routinely
     # ask "Lahore districts from 1 Jan to 10 Jan 2026" with no other
     # cue — without this fallback such queries fall through to docs.
+    # Comparison shortcut — runs BEFORE ranking. "X vs Y" with two
+    # named locations is a comparison, NOT a province-wide ranking.
+    # Without this, "lahore districts vs multan districts paid
+    # challans" matches the ranking shortcut ("paid challans" + level)
+    # and dumps a 20-row tehsil ranking instead of a 2-column compare.
+    if _detect_comparison_intent(q):
+        _cmp_locs = _detect_multiple_locations(q)
+        if len(_cmp_locs) >= 2:
+            parts = [f"{loc['level']}|{loc[loc['level']+'_name']}"
+                     for loc in _cmp_locs]
+            return "insp_compare:" + "::".join(parts)
+
     # Ranking shortcut — runs BEFORE the keyword gate because superlative
     # + metric + level (e.g. "most challans tehsil") is a high-confidence
     # inspection-ranking query even without the literal "inspection" word.
@@ -760,6 +1226,23 @@ def detect_inspection_intent(question: str) -> Optional[str]:
     )
     if _REPEAT_RE.search(q):
         return "insp_repeat_offenders"
+
+    # Comparison short-circuit BEFORE single-location detection.
+    # When the user explicitly asks for a comparison ("X vs Y",
+    # "compare X and Y", "muqabla", "between A and B") and two or
+    # more locations are mentioned, route to the dedicated compare
+    # handler so the response is a side-by-side table rather than the
+    # first-match-only summary that single-location detection would
+    # build.
+    if _detect_comparison_intent(q):
+        locs = _detect_multiple_locations(q)
+        if len(locs) >= 2:
+            # Encode the location list into the source_id payload.
+            # Format: insp_compare:level1|name1::level2|name2::...
+            # The dispatcher splits on "::" then on "|" to recover.
+            parts = [f"{loc['level']}|{loc[loc['level']+'_name']}"
+                     for loc in locs]
+            return "insp_compare:" + "::".join(parts)
 
     # Location detection runs BEFORE officer detection so admin-level
     # queries don't get hijacked by greedy name-pair LIKE matches on
@@ -936,7 +1419,7 @@ def execute_inspection_lookup(
     base = parts[0]
 
     if base == "insp_summary":
-        return _query_insp_summary(db, start_date, end_date)
+        return _query_insp_summary(db, start_date, end_date, question=question)
     elif base == "insp_division":
         name = ":".join(parts[1:]) if len(parts) > 1 else ""
         return _query_insp_location(db, "division", name, start_date, end_date,
@@ -956,7 +1439,24 @@ def execute_inspection_lookup(
     elif base in ("insp_enforcer_division", "insp_enforcer_district", "insp_enforcer_tehsil"):
         level = base.split("_", 2)[2]
         name = ":".join(parts[1:]) if len(parts) > 1 else ""
-        return _query_enforcer_location(db, level, name, start_date, end_date)
+        return _query_enforcer_location(db, level, name, start_date, end_date,
+                                        question=question)
+    elif base == "insp_compare":
+        # Payload format: insp_compare:level1|name1::level2|name2::...
+        payload = ":".join(parts[1:]) if len(parts) > 1 else ""
+        locs: List[Dict[str, str]] = []
+        for chunk in payload.split("::"):
+            if "|" not in chunk:
+                continue
+            lvl, name = chunk.split("|", 1)
+            lvl = lvl.strip()
+            name = name.strip()
+            if lvl in ("tehsil", "district", "division") and name:
+                locs.append({"level": lvl, "name": name})
+        if len(locs) < 2:
+            return None
+        return _query_compare_locations(db, locs, start_date, end_date,
+                                         question=question)
     elif base == "insp_officer":
         officer_name = ":".join(parts[1:]) if len(parts) > 1 else ""
         return _query_insp_officer(db, officer_name, start_date, end_date,
@@ -1459,49 +1959,80 @@ def _query_top_locations(
     sort_word = "Lowest" if direction == "ASC" else "Highest"
     scope = (f" within {parent_name} ({parent_type})"
              if parent_type and parent_name else "")
-    ctx = f"Ranking — {level_label}s by {metric_label}{scope} ({sort_word} first)\n"
-    if snap:
-        ctx += f"Snapshot date: {snap}\n"
-    # Banner: explain when the user asked for a date window but the
-    # underlying detail data for this metric is not date-filterable.
+    # Markdown table so the frontend renders a proper grid instead of
+    # a paragraph of space-padded text. The headline opener also gets
+    # promoted to a one-line summary sentence so the bot reads like
+    # the other deterministic-answer paths (arrest / enforcer /
+    # focused-metric handlers).
+    top_row = rows[0]
+    top_name = top_row.get("loc_name") or "—"
+    top_val = int(top_row.get("metric_value") or 0)
+    intro = (
+        f"Ranked by {metric_label} ({sort_word.lower()} first), "
+        f"**{top_name}** leads the {level_label.lower()}s with "
+        f"{top_val:,} {metric_label.lower()}{scope}."
+    )
+    ctx = intro + "\n\n"
+    ctx += f"### Ranking — {level_label}s by {metric_label}{scope} ({sort_word} first)\n\n"
     if _user_dr is not None and metric not in _detail_flag_map:
         date_label = (f"{_user_dr.start.strftime('%d %b %Y')} — "
                       f"{_user_dr.end.strftime('%d %b %Y')}")
         ctx += (
-            f"NOTE: '{metric_label}' is only stored as a cumulative "
-            f"all-time total in the PERA snapshot. The requested date "
-            f"window ({date_label}) cannot be applied to this metric. "
-            f"Below ranking is the latest cumulative snapshot.\n"
+            f"_Note: `{metric_label}` is only stored as a cumulative "
+            f"all-time total. The requested window ({date_label}) cannot "
+            f"be applied to this metric; ranking below is the latest "
+            f"cumulative snapshot._\n\n"
         )
-    ctx += "=" * 50 + "\n"
-    ctx += (
-        f"{'Rank':<5s}{level_label:<25s} {metric_label:>15s}  "
-        f"Insp  Chal  FIR  Seal  Warn  Arr  EPO  RmO\n"
-    )
+    # Companion columns shown alongside the ranked metric. Drop any
+    # column that is the same as the rank metric so the ranked
+    # number doesn't appear twice in the row.
+    _extra_cols = [
+        ("Inspections", "total_actions"),
+        ("Challans",    "challans"),
+        ("FIRs",        "firs"),
+        ("Sealed",      "sealed"),
+        ("Warnings",    "warnings"),
+        ("No Offenses", "no_offenses"),
+        ("Arrests",     "arrest_count"),
+        ("EPO",         "epo"),
+        ("Removal",     "removal_order"),
+    ]
+    _extra_cols = [(lbl, key) for (lbl, key) in _extra_cols if key != metric]
+    # Drop columns where every row is 0 — typically No Offenses / EPO /
+    # Removal Order / Arrests at division-level aggregate, since those
+    # metrics are only populated at the tehsil-detail layer. Avoids a
+    # table full of blank zero columns that looks like missing data.
+    _extra_cols = [
+        (lbl, key) for (lbl, key) in _extra_cols
+        if any(int(r.get(key) or 0) != 0 for r in rows)
+    ]
+    header = f"| Rank | {level_label} | {metric_label} |"
+    header += "".join(f" {lbl} |" for (lbl, _k) in _extra_cols) + "\n"
+    sep = "| --- | --- | ---: |" + "".join(" ---: |" for _ in _extra_cols) + "\n"
+    ctx += header + sep
     for i, r in enumerate(rows, 1):
-        ctx += (
-            f"{i:<5d}{(r.get('loc_name') or '—'):<25s} "
-            f"{int(r.get('metric_value') or 0):>15,}  "
-            f"{int(r.get('total_actions') or 0):>4,}  "
-            f"{int(r.get('challans') or 0):>4,}  "
-            f"{int(r.get('firs') or 0):>3,}  "
-            f"{int(r.get('sealed') or 0):>4,}  "
-            f"{int(r.get('warnings') or 0):>4,}  "
-            f"{int(r.get('arrest_count') or 0):>3,}  "
-            f"{int(r.get('epo') or 0):>3,}  "
-            f"{int(r.get('removal_order') or 0):>3,}\n"
+        row_str = (
+            f"| {i} | {r.get('loc_name') or '—'} "
+            f"| {int(r.get('metric_value') or 0):,} |"
         )
+        for (_lbl, key) in _extra_cols:
+            row_str += f" {int(r.get(key) or 0):,} |"
+        ctx += row_str + "\n"
+    if snap:
+        try:
+            ctx += "\n" + _format_user_freshness(snap) + "\n"
+        except Exception:
+            ctx += f"\nSnapshot date: {snap}\n"
     if _user_dr is not None and metric in _detail_flag_map:
-        # Daterange branch failed earlier; mark fallback explicitly.
         ctx += (
-            f"\n(No per-row SDEO detail rows matched the requested window; "
-            f"falling back to latest cumulative snapshot.)\n"
+            f"\n_No per-row SDEO detail rows matched the requested "
+            f"window; falling back to the latest cumulative snapshot._\n"
         )
     else:
         ctx += (
-            f"\n(Ranking computed from latest stored snapshot of "
-            f"inspection_performance. Cumulative all-time totals; not "
-            f"date-range filtered.)\n"
+            f"\n_Ranking computed from the latest stored snapshot of "
+            f"`inspection_performance`. Cumulative all-time totals; "
+            f"not date-range filtered._\n"
         )
     return {
         "source_id": f"insp_top:{metric}:{level}:{order}",
@@ -1651,7 +2182,8 @@ def _query_top_locations_daterange(
 
 # ── Summary query (all divisions) ────────────────────────────
 def _query_insp_summary(
-    db, start_date: Optional[date], end_date: Optional[date]
+    db, start_date: Optional[date], end_date: Optional[date],
+    question: str = "",
 ) -> Dict[str, Any]:
     """Query inspection_performance for overall summary.
     Columns: total_actions, challans, firs, warnings, no_offenses, sealed
@@ -1794,40 +2326,265 @@ def _query_insp_summary(
     except Exception:
         pass
 
+    # ── Focused single-metric short-circuit ─────────────────
+    # Mirror of the same logic in _query_insp_location. If the user
+    # asked specifically for ONE metric across all of Punjab (e.g.
+    # "give me the overall challan summary", "how many FIRs in
+    # Punjab"), emit a 2-column table for that metric instead of the
+    # full 6-column breakdown.
+    _METRIC_LABELS_SUMMARY = {
+        "challans":     ("Challans", "challans issued"),
+        "firs":         ("FIRs",     "FIRs registered"),
+        "warnings":     ("Warnings", "warnings issued"),
+        "no_offenses":  ("No-Offence Outcomes", "no-offence outcomes recorded"),
+        "sealed":       ("Sealed Premises",     "premises sealed"),
+        "total_actions":("Inspection Actions",  "inspection actions recorded"),
+    }
+    _BROAD_RE_S = re.compile(
+        r"\b(summary|breakdown|overview|all|full|detailed?|complete|"
+        r"performance|report|dashboard|card|kpis?)\b",
+        re.I,
+    )
+
+    def _detect_single_metric_summary(q: str) -> Optional[str]:
+        if not q:
+            return None
+        focusable = set(_METRIC_LABELS_SUMMARY.keys())
+        hits: List[str] = []
+        for col, rx in _RANK_METRIC_MAP:
+            if col not in focusable:
+                continue
+            if rx.search(q):
+                hits.append(col)
+        # "challan summary" must STILL collapse to focused mode even
+        # though it contains the broad token "summary", because the
+        # user already named the single metric. The veto only fires
+        # when zero focusable metrics matched and the user clearly
+        # wants the multi-metric overview.
+        if len(hits) == 1:
+            return hits[0]
+        if len(hits) == 0 and _BROAD_RE_S.search(q):
+            return None
+        return None
+
+    focused_metric = _detect_single_metric_summary(question or "")
+    direct_answer: Optional[str] = None
+
+    # Special case: focused-challan query gets the FULL financial
+    # breakdown per division (fine imposed, paid amount, unpaid
+    # amount, overdue amount) sourced from `challan_by_division`,
+    # which carries per-status counts and amounts. Plain count is too
+    # thin for an authority-facing challan summary.
+    if focused_metric == "challans":
+        # Pivot challan_by_division by (division_name, status) → one
+        # row per division with count + amount per status.
+        cby: Dict[str, Dict[str, Any]] = {}
+        try:
+            cby_rows = db.fetch_all(
+                "SELECT division_name, status, total_challans, total_amount "
+                "FROM challan_by_division "
+                "WHERE division_name IS NOT NULL AND division_name != ''"
+            )
+            for r in cby_rows:
+                dn = r.get("division_name") or ""
+                st = (r.get("status") or "").lower()
+                slot = cby.setdefault(dn, {
+                    "paid_n": 0, "paid_amt": 0.0,
+                    "unpaid_n": 0, "unpaid_amt": 0.0,
+                    "overdue_n": 0, "overdue_amt": 0.0,
+                })
+                try:
+                    n = int(r.get("total_challans") or 0)
+                except (TypeError, ValueError):
+                    n = 0
+                try:
+                    a = float(r.get("total_amount") or 0)
+                except (TypeError, ValueError):
+                    a = 0.0
+                if st == "paid":
+                    slot["paid_n"] += n
+                    slot["paid_amt"] += a
+                elif st == "unpaid":
+                    slot["unpaid_n"] += n
+                    slot["unpaid_amt"] += a
+                elif st == "overdue":
+                    slot["overdue_n"] += n
+                    slot["overdue_amt"] += a
+        except Exception as e:
+            log.warning("challan_by_division pivot failed: %s", e)
+
+        # Build per-division consolidated rows: total challans, fine
+        # imposed, paid amount, unpaid amount, overdue amount.
+        per_div: List[Dict[str, Any]] = []
+        for r in rows:
+            dn = r.get("division_name") or "Unknown"
+            slot = cby.get(dn, {})
+            paid_n     = int(slot.get("paid_n") or 0)
+            unpaid_n   = int(slot.get("unpaid_n") or 0)
+            overdue_n  = int(slot.get("overdue_n") or 0)
+            paid_amt   = float(slot.get("paid_amt") or 0)
+            unpaid_amt = float(slot.get("unpaid_amt") or 0)
+            overdue_amt= float(slot.get("overdue_amt") or 0)
+            # Total challans is paid + unpaid + overdue from
+            # challan_by_division (which INCLUDES overdue, unlike
+            # inspection_performance.challans). Fall back to the
+            # inspection_performance value when challan_by_division
+            # had no rows for this division.
+            # Total challans = paid + unpaid only. Overdue is a subset
+            # of unpaid in PERA's status model, so adding it would
+            # double-count.
+            total_n = paid_n + unpaid_n
+            if total_n == 0:
+                total_n = _i(r.get("challans"))
+            # PERA dashboard treats overdue as a SUBSET of unpaid —
+            # NOT a separate bucket. So total challans = paid + unpaid
+            # only, and fine imposed = paid_amt + unpaid_amt only.
+            # Overdue counts/amounts are shown as informational
+            # ("of the unpaid, X are past due") and never added to the
+            # total.
+            try:
+                ip_imposed = float(r.get("fine_imposed") or 0)
+            except (TypeError, ValueError):
+                ip_imposed = 0.0
+            cb_imposed = paid_amt + unpaid_amt
+            fine_imposed = cb_imposed if cb_imposed > 0 else ip_imposed
+            per_div.append({
+                "division": dn,
+                "total_challans": total_n,
+                "fine_imposed":   fine_imposed,
+                "paid_n":         paid_n,
+                "paid_amt":       paid_amt,
+                "unpaid_n":       unpaid_n,
+                "unpaid_amt":     unpaid_amt,
+                "overdue_n":      overdue_n,
+                "overdue_amt":    overdue_amt,
+            })
+
+        per_div.sort(key=lambda x: x["total_challans"], reverse=True)
+        T = {
+            "total_challans": sum(x["total_challans"] for x in per_div),
+            "fine_imposed":   sum(x["fine_imposed"]   for x in per_div),
+            "paid_n":         sum(x["paid_n"]         for x in per_div),
+            "paid_amt":       sum(x["paid_amt"]       for x in per_div),
+            "unpaid_n":       sum(x["unpaid_n"]       for x in per_div),
+            "unpaid_amt":     sum(x["unpaid_amt"]     for x in per_div),
+            "overdue_n":      sum(x["overdue_n"]      for x in per_div),
+            "overdue_amt":    sum(x["overdue_amt"]    for x in per_div),
+        }
+        recovery_pct = (
+            (T["paid_amt"] / T["fine_imposed"] * 100) if T["fine_imposed"] else 0
+        )
+
+        intro = (
+            f"Across Punjab, PERA has issued {T['total_challans']:,} "
+            f"challans with a cumulative fine of Rs. "
+            f"{int(T['fine_imposed']):,}. Recovery so far is "
+            f"Rs. {int(T['paid_amt']):,} ({recovery_pct:.1f}% by amount). "
+            f"Outstanding (unpaid) is Rs. {int(T['unpaid_amt']):,} across "
+            f"{T['unpaid_n']:,} challans, of which {T['overdue_n']:,} "
+            f"({int(T['overdue_amt']):,} Rs) are past due."
+        )
+
+        body = "\n\nDivision-wise Challan & Recovery Breakdown:\n\n"
+        body += (
+            "| Division | Challans | Fine Imposed (Rs) "
+            "| Paid (n) | Paid (Rs) "
+            "| Unpaid (n) | Unpaid (Rs) "
+            "| Overdue (n) | Overdue (Rs) |\n"
+            "|---|---:|---:|---:|---:|---:|---:|---:|---:|\n"
+        )
+        for r in per_div:
+            body += (
+                f"| {r['division']} "
+                f"| {r['total_challans']:,} "
+                f"| {int(r['fine_imposed']):,} "
+                f"| {r['paid_n']:,} "
+                f"| {int(r['paid_amt']):,} "
+                f"| {r['unpaid_n']:,} "
+                f"| {int(r['unpaid_amt']):,} "
+                f"| {r['overdue_n']:,} "
+                f"| {int(r['overdue_amt']):,} |\n"
+            )
+        body += (
+            f"| **Total** "
+            f"| **{T['total_challans']:,}** "
+            f"| **{int(T['fine_imposed']):,}** "
+            f"| **{T['paid_n']:,}** "
+            f"| **{int(T['paid_amt']):,}** "
+            f"| **{T['unpaid_n']:,}** "
+            f"| **{int(T['unpaid_amt']):,}** "
+            f"| **{T['overdue_n']:,}** "
+            f"| **{int(T['overdue_amt']):,}** |\n"
+        )
+
+        direct_answer = intro + body
+        try:
+            if _summary_snapshot is not None:
+                direct_answer += "\n" + _format_user_freshness(_summary_snapshot) + "\n"
+        except Exception:
+            pass
+
+    elif focused_metric:
+        label_plural, label_phrase = _METRIC_LABELS_SUMMARY[focused_metric]
+        total_v = _i(totals.get(focused_metric))
+        intro = (
+            f"Across Punjab, PERA has recorded {total_v:,} {label_phrase} "
+            f"in the latest snapshot. The division-wise breakdown is below."
+        )
+        body = "\n\n" + f"Division-wise {label_plural}:\n\n"
+        body += f"| Division | {label_plural} |\n|---|---:|\n"
+        sorted_rows = sorted(
+            rows, key=lambda x: _i(x.get(focused_metric)), reverse=True,
+        )
+        running = 0
+        for r in sorted_rows:
+            v = _i(r.get(focused_metric))
+            running += v
+            body += f"| {r.get('division_name') or 'Unknown'} | {v:,} |\n"
+        body += f"| **Total** | **{running:,}** |\n"
+        direct_answer = intro + body
+        try:
+            if _summary_snapshot is not None:
+                direct_answer += "\n" + _format_user_freshness(_summary_snapshot) + "\n"
+        except Exception:
+            pass
+
     # Deterministic direct answer — bypasses the LLM. We strip the
     # "IMPORTANT FORMATTING RULE" prelude (LLM-only) and the H1 banner,
     # leaving just the opener + breakdown table + freshness footer.
     # The frontend renders this verbatim, so the 7-column table always
     # appears intact regardless of LLM behaviour.
-    direct_answer = (
-        f"PERA has recorded {_i(totals['total_actions']):,} regulatory "
-        f"inspection actions across Punjab. The summary below includes "
-        f"inspections, challans, FIRs, warnings, sealed premises, and "
-        f"no-offence outcomes.\n\n"
-        "Division-wise Inspection Breakdown:\n\n"
-        "| Division | Inspections | Challans | FIRs | Warnings | "
-        "No Offenses | Sealed |\n"
-        "|---|---:|---:|---:|---:|---:|---:|\n"
-    )
-    for r in rows:
-        direct_answer += (
-            f"| {r.get('division_name') or 'Unknown'} "
-            f"| {_i(r.get('total_actions')):,} "
-            f"| {_i(r.get('challans')):,} "
-            f"| {_i(r.get('firs')):,} "
-            f"| {_i(r.get('warnings')):,} "
-            f"| {_i(r.get('no_offenses')):,} "
-            f"| {_i(r.get('sealed')):,} |\n"
+    if direct_answer is None:
+        direct_answer = (
+            f"PERA has recorded {_i(totals['total_actions']):,} regulatory "
+            f"inspection actions across Punjab. The summary below includes "
+            f"inspections, challans, FIRs, warnings, sealed premises, and "
+            f"no-offence outcomes.\n\n"
+            "Division-wise Inspection Breakdown:\n\n"
+            "| Division | Inspections | Challans | FIRs | Warnings | "
+            "No Offenses | Sealed |\n"
+            "|---|---:|---:|---:|---:|---:|---:|\n"
         )
+        for r in rows:
+            direct_answer += (
+                f"| {r.get('division_name') or 'Unknown'} "
+                f"| {_i(r.get('total_actions')):,} "
+                f"| {_i(r.get('challans')):,} "
+                f"| {_i(r.get('firs')):,} "
+                f"| {_i(r.get('warnings')):,} "
+                f"| {_i(r.get('no_offenses')):,} "
+                f"| {_i(r.get('sealed')):,} |\n"
+            )
     # Freshness footer in the same human-readable format the frontend
-    # sanitizer would otherwise rewrite to. Emitting it directly keeps
-    # the "Data last updated: 14 May 2026, hh:mm AM/PM" wording the
-    # user already accepted, without depending on regex post-fixing.
-    try:
-        if _summary_snapshot is not None:
-            direct_answer += "\n" + _format_user_freshness(_summary_snapshot) + "\n"
-    except Exception:
-        pass
+    # sanitizer would otherwise rewrite to. Skipped for the focused-
+    # metric path because that branch appended its own freshness line
+    # already; appending here would duplicate it.
+    if not focused_metric:
+        try:
+            if _summary_snapshot is not None:
+                direct_answer += "\n" + _format_user_freshness(_summary_snapshot) + "\n"
+        except Exception:
+            pass
 
     return {
         "source_id": "insp_summary",
@@ -1957,8 +2714,8 @@ def _query_arrest_location(
 
     if err_count:
         body += (
-            f"\n_Note: {err_count} tehsil(s) returned no data from the live "
-            f"PCM endpoint; their counts are shown as 0._\n"
+            f"\n_Note: {err_count} tehsil(s) had no data for this "
+            f"period; shown as 0._\n"
         )
 
     # Freshness footer — PCM dashboard-counts is live, so the snapshot
@@ -1991,10 +2748,215 @@ def _query_arrest_location(
     }
 
 
+def _query_compare_locations(
+    db,
+    locations: List[Dict[str, str]],
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    question: str = "",
+) -> Dict[str, Any]:
+    """Side-by-side comparison of two or more locations.
+
+    Each location may be at any level (tehsil / district / division).
+    For each one we fan out the same SDEO endpoint trio used by the
+    focused-challan handler — inspections-summary, top-kpis,
+    challan-status-breakdown — plus PCM dashboard-counts for arrests.
+    Output is a single markdown table with one column per location
+    and one row per KPI so authorities can scan differences quickly.
+
+    Default date window: 2024-01-01 → today when the user did not
+    supply explicit dates. SDEO endpoints reject open-ended ranges.
+    """
+    from datetime import date as _date, datetime as _dt
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    if not end_date:
+        end_date = _date.today()
+    if not start_date:
+        start_date = _date(2024, 1, 1)
+    sdate = start_date.isoformat()
+    edate = end_date.isoformat()
+    SDEO_BASE = "https://pera360.punjab.gov.pk/backend/api/sdeo-dashboard"
+
+    # Resolve the tehsil_id set for each location so we can fan out
+    # the SDEO endpoints. Tehsil-level locations carry their own id;
+    # district/division locations expand to all child tehsils.
+    def _resolve_tehsils(loc: Dict[str, str]) -> List[Dict[str, Any]]:
+        try:
+            if loc["level"] == "tehsil":
+                return db.fetch_all(
+                    "SELECT tehsil_id, tehsil_name FROM dim_tehsil "
+                    "WHERE tehsil_name = %s",
+                    (loc["name"],),
+                ) or []
+            if loc["level"] == "district":
+                return db.fetch_all(
+                    "SELECT t.tehsil_id, t.tehsil_name "
+                    "FROM dim_tehsil t "
+                    "JOIN dim_district d ON d.district_id = t.district_id "
+                    "WHERE d.district_name = %s",
+                    (loc["name"],),
+                ) or []
+            if loc["level"] == "division":
+                return db.fetch_all(
+                    "SELECT t.tehsil_id, t.tehsil_name "
+                    "FROM dim_tehsil t "
+                    "JOIN dim_district d ON d.district_id = t.district_id "
+                    "JOIN dim_division v ON v.division_id = d.division_id "
+                    "WHERE v.division_name = %s",
+                    (loc["name"],),
+                ) or []
+        except Exception as e:
+            log.warning("compare: tehsil resolve failed for %s '%s': %s",
+                        loc["level"], loc["name"], e)
+        return []
+
+    def _fetch_tehsil(tid: int) -> Dict[str, Any]:
+        # Single authoritative call — matches dashboard tiles exactly.
+        c = _fetch_pcm_dashboard_counts(tid, start_date, end_date)
+        return {
+            "inspections": c["inspections"],
+            "challans":    c["challans"],
+            "fine":        c["fine"],
+            "paid_n":      c["paid_n"],
+            "unpaid_n":    c["unpaid_n"],
+            "paid_amt":    c["paid_amt"],
+            "unpaid_amt":  c["unpaid_amt"],
+            "sealed":      c["sealed"],
+            "warnings":    c["warnings"],
+            "firs":        0,   # PCM dashboard-counts has no FIR field
+            "no_offenses": 0,   # nor no-offenses; left at 0 in compare
+            "arrests":     c["arrests"],
+        }
+
+    # Build aggregated rollup per location.
+    per_loc: List[Dict[str, Any]] = []
+    for loc in locations:
+        tehsils = _resolve_tehsils(loc)
+        if not tehsils:
+            per_loc.append({
+                "label": f"{loc['name']} ({loc['level']})",
+                "missing": True,
+                "inspections": 0, "challans": 0, "fine": 0.0,
+                "paid_n": 0, "unpaid_n": 0, "paid_amt": 0.0,
+                "unpaid_amt": 0.0, "sealed": 0, "warnings": 0,
+                "firs": 0, "no_offenses": 0, "arrests": 0,
+                "tehsil_count": 0,
+            })
+            continue
+        results: List[Dict[str, Any]] = []
+        with ThreadPoolExecutor(max_workers=min(8, max(2, len(tehsils)))) as ex:
+            futs = [ex.submit(_fetch_tehsil, t["tehsil_id"]) for t in tehsils]
+            for f in as_completed(futs):
+                results.append(f.result())
+        rolled = {
+            "inspections": sum(r["inspections"] for r in results),
+            "challans":    sum(r["challans"]    for r in results),
+            "fine":        sum(r["fine"]        for r in results),
+            "paid_n":      sum(r["paid_n"]      for r in results),
+            "unpaid_n":    sum(r["unpaid_n"]    for r in results),
+            "paid_amt":    sum(r["paid_amt"]    for r in results),
+            "unpaid_amt":  sum(r["unpaid_amt"]  for r in results),
+            "sealed":      sum(r["sealed"]      for r in results),
+            "warnings":    sum(r["warnings"]    for r in results),
+            "firs":        sum(r["firs"]        for r in results),
+            "no_offenses": sum(r["no_offenses"] for r in results),
+            "arrests":     sum(r["arrests"]     for r in results),
+        }
+        per_loc.append({
+            "label": f"{loc['name']} ({loc['level']})",
+            "missing": False,
+            "tehsil_count": len(tehsils),
+            **rolled,
+        })
+
+    labels = [r["label"] for r in per_loc]
+    source_id = "insp_compare:" + "::".join(labels)
+    date_label = f"{sdate} – {edate}"
+
+    intro = (
+        f"Side-by-side comparison ({date_label}) of "
+        f"{', '.join(labels)}."
+    )
+
+    # Build comparison table: one column per location, one row per KPI.
+    header = "| KPI | " + " | ".join(labels) + " |\n"
+    sep = "|---" + (" | ---:" * len(labels)) + " |\n"
+
+    def _row(label: str, key: str, fmt: str = "{:,}") -> str:
+        vals = []
+        for r in per_loc:
+            v = r.get(key)
+            if isinstance(v, float):
+                vals.append(fmt.format(int(v)))
+            else:
+                vals.append(fmt.format(v or 0))
+        return f"| {label} | " + " | ".join(vals) + " |\n"
+
+    body = "\n\n" + header + sep
+    body += _row("Total Inspections", "inspections")
+    body += _row("Total Challans",    "challans")
+    body += _row("Fine Imposed (Rs)", "fine")
+    body += _row("Paid Challans",     "paid_n")
+    body += _row("Paid Amount (Rs)",  "paid_amt")
+    body += _row("Unpaid Challans",   "unpaid_n")
+    body += _row("Unpaid Amount (Rs)","unpaid_amt")
+    body += _row("Sealed",            "sealed")
+    body += _row("Warnings",          "warnings")
+    body += _row("Arrests",           "arrests")
+
+    # Leader call-outs: which location wins on inspections / fine /
+    # recovery rate. Skips when only one location has data.
+    if len(per_loc) >= 2 and any(not r["missing"] for r in per_loc):
+        top_insp = max(per_loc, key=lambda r: r["inspections"])
+        top_fine = max(per_loc, key=lambda r: r["fine"])
+        recoveries = [
+            (r["label"], (r["paid_amt"] / r["fine"] * 100) if r["fine"] else 0)
+            for r in per_loc
+        ]
+        top_rec = max(recoveries, key=lambda x: x[1])
+        body += (
+            f"\n_Leaders — Inspections: **{top_insp['label']}** "
+            f"({top_insp['inspections']:,}) · "
+            f"Fine: **{top_fine['label']}** "
+            f"(Rs {int(top_fine['fine']):,}) · "
+            f"Recovery: **{top_rec[0]}** ({top_rec[1]:.1f}%)_\n"
+        )
+
+    now = _dt.now()
+    h = now.hour
+    ampm = "PM" if h >= 12 else "AM"
+    h12 = ((h + 11) % 12) + 1
+    body += (
+        f"\nData last updated: {now.day} {_MONTH_NAMES[now.month - 1]} "
+        f"{now.year}, {h12}:{now.minute:02d} {ampm}.\n"
+    )
+
+    formatted_context = (
+        f"Comparison — {', '.join(labels)} ({date_label})\n"
+        + "=" * 50 + "\n"
+        + "\n".join(
+            f"{r['label']}: inspections={r['inspections']:,} "
+            f"challans={r['challans']:,} "
+            f"fine=Rs.{int(r['fine']):,} "
+            f"paid={r['paid_n']:,} unpaid={r['unpaid_n']:,}"
+            for r in per_loc
+        ) + "\n"
+    )
+
+    return {
+        "source_id": source_id,
+        "records": per_loc,
+        "formatted_context": formatted_context,
+        "direct_answer": intro + body,
+    }
+
+
 def _query_enforcer_location(
     db, level: str, name: str,
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
+    question: str = "",
 ) -> Dict[str, Any]:
     """Focused enforcer (force-deployed) count for a location.
 
@@ -2013,8 +2975,12 @@ def _query_enforcer_location(
     if not end_date:
         end_date = _date.today()
     if not start_date:
-        # Wide enough to cover all PERA records — the live SDEO endpoint
-        # rejects an open-ended range so we always pass a bounded one.
+        # Default = full PERA history (2024-01-01 → today) to match
+        # the dashboard's "all-time" view when the user gives no
+        # explicit range. The dashboard's date picker defaults vary
+        # by page (today on DC dashboard, broader elsewhere); we use
+        # the widest window so a user asking "kitne enforcer hain
+        # total" sees the cumulative roster.
         start_date = _date(2024, 1, 1)
 
     # Resolve child tehsils via the same dim_district / dim_division
@@ -2065,29 +3031,50 @@ def _query_enforcer_location(
     edate = end_date.isoformat()
 
     def _fetch(tid: int, tname: str) -> Dict[str, Any]:
+        # Two calls in sequence per tehsil:
+        #   1. PCM /officer-inspection-details → ENFORCER count
+        #      (distinct user rows = enforcers, matches dashboard tile)
+        #   2. SDEO /top-kpis → vehicles + operations (top-kpis is the
+        #      only source for these two fields)
+        enforcers = 0
+        vehicles = 0
+        operations = 0
+        err = None
         try:
             r = requests.get(
-                "https://pera360.punjab.gov.pk/backend/api/sdeo-dashboard/top-kpis",
-                params={"tehsilId": tid, "startDate": sdate, "endDate": edate},
-                headers=_HEADERS,
-                timeout=_API_TIMEOUT,
+                PCM_OFFICER_INSPECTION_DETAILS,
+                params={"tehsilId": tid,
+                        "startDate": sdate, "endDate": edate},
+                headers=_HEADERS, timeout=_API_TIMEOUT,
             )
             r.raise_for_status()
-            j = r.json() if isinstance(r.json(), dict) else {}
-            return {
-                "tehsil_id": tid,
-                "tehsil_name": tname,
-                "enforcers": int(j.get("totalForceDeployed") or 0),
-                "vehicles": int(j.get("vehiclesUsed") or 0),
-                "operations": int(j.get("operationsExecuted") or 0),
-                "error": None,
-            }
+            rows = r.json() if isinstance(r.json(), list) else []
+            # Distinct userId — same userId appearing twice (e.g. role
+            # rename) collapses to one enforcer.
+            enforcers = len({row.get("userId") for row in rows
+                             if row.get("userId")})
+            if not enforcers and rows:
+                enforcers = len(rows)
         except Exception as e:
-            return {
-                "tehsil_id": tid, "tehsil_name": tname,
-                "enforcers": 0, "vehicles": 0, "operations": 0,
-                "error": str(e),
-            }
+            err = f"officer-details:{e}"
+        try:
+            k = requests.get(
+                "https://pera360.punjab.gov.pk/backend/api/sdeo-dashboard/top-kpis",
+                params={"tehsilId": tid,
+                        "startDate": sdate, "endDate": edate},
+                headers=_HEADERS, timeout=_API_TIMEOUT,
+            )
+            k.raise_for_status()
+            j = k.json() if isinstance(k.json(), dict) else {}
+            vehicles   = int(j.get("vehiclesUsed") or 0)
+            operations = int(j.get("operationsExecuted") or 0)
+        except Exception as e:
+            err = (err or "") + f" top-kpis:{e}"
+        return {
+            "tehsil_id": tid, "tehsil_name": tname,
+            "enforcers": enforcers, "vehicles": vehicles,
+            "operations": operations, "error": err,
+        }
 
     workers = min(8, max(2, len(tehsils)))
     with ThreadPoolExecutor(max_workers=workers) as ex:
@@ -2103,12 +3090,8 @@ def _query_enforcer_location(
 
     intro = (
         f"Across the {name} {level.title()} (period {sdate} to {edate}), "
-        f"PERA has deployed a cumulative total of {total_enforcers:,} "
-        f"enforcers (force-deployed personnel) across "
-        f"{len(per_tehsil)} tehsil(s). Enforcer is the dashboard tile "
-        f"that maps to the SDEO top-kpis `totalForceDeployed` field; it "
-        f"is reported separately from arrests, FIRs, and inspection "
-        f"officers."
+        f"PERA has {total_enforcers:,} enforcers on roster across "
+        f"{len(per_tehsil)} tehsil(s)."
     )
     body = "\n\nTehsil-wise Enforcer Breakdown:\n\n"
     body += "| Tehsil | Enforcers | Vehicles | Operations |\n|---|---:|---:|---:|\n"
@@ -2123,8 +3106,8 @@ def _query_enforcer_location(
     )
     if err_count:
         body += (
-            f"\n_Note: {err_count} tehsil(s) returned no data from the live "
-            f"SDEO top-kpis endpoint; their counts are shown as 0._\n"
+            f"\n_Note: {err_count} tehsil(s) had no data for this "
+            f"period; shown as 0._\n"
         )
 
     now = _dt.now()
@@ -2168,8 +3151,32 @@ def _query_insp_location(
     col = f"{level}_name"
     source_id = f"insp_{level}:{name}"
 
+    # ── Focused single-metric short-circuit (PCM dashboard-counts) ──
+    # When the user asks about ONE specific metric for a
+    # district/division (sealed / warnings / challans / arrests /
+    # inspections), build a focused per-tehsil table from the PCM
+    # dashboard-counts endpoint — which matches the dashboard tiles
+    # and carries every per-tehsil value — instead of the generic
+    # _query_district_live performance dump (which returns the full
+    # KPI card set and, on short windows, mostly zeros for tehsils
+    # whose SDEO rows haven't propagated). Works with OR without a
+    # date range.
+    _pcm_focus_metric = _detect_pcm_focus_metric(question)
+    if (_pcm_focus_metric
+            and level in ("district", "division", "tehsil")):
+        return _query_focused_metric_location(
+            db, level, name, _pcm_focus_metric,
+            start_date, end_date, question=question,
+        )
+
+    _try_focused_challan = bool(
+        start_date and end_date
+        and level in ("district", "division")
+        and _detect_focused_challan_keyword(question)
+    )
+
     # ── Date-ranged → LIVE SDEO API CALL ──
-    if start_date and end_date:
+    if start_date and end_date and not _try_focused_challan:
         if level == "tehsil":
             return _query_tehsil_live(db, name, start_date, end_date,
                                       source_id, question=question)
@@ -2363,7 +3370,7 @@ def _query_insp_location(
     )
 
     def _detect_single_metric(q: str) -> Optional[str]:
-        if not q or _BROAD_RE.search(q):
+        if not q:
             return None
         hits: List[str] = []
         # Skip metrics not surfaced in inspection_performance children
@@ -2375,11 +3382,193 @@ def _query_insp_location(
                 continue
             if rx.search(q):
                 hits.append(col)
-        # Exactly one focused metric mentioned → focused mode.
-        return hits[0] if len(hits) == 1 else None
+        # Exactly one focused metric mentioned → focused mode wins,
+        # even when the user also says "summary" / "breakdown" / etc.
+        # "challan summary of Bahawalpur" must collapse to the
+        # focused-challan path, not the full 6-column dump.
+        if len(hits) == 1:
+            return hits[0]
+        # Zero metric hits + broad token = explicit overview request.
+        # Multiple hits = full table (user named several metrics).
+        return None
 
     focused_metric = _detect_single_metric(question or "")
-    if (focused_metric
+
+    # Focused-challan at division/district level → fan out the LIVE
+    # SDEO dashboard endpoints per child tehsil so the chatbot table
+    # matches the PERA360 dashboard counts exactly. We call THREE
+    # SDEO endpoints per tehsil in parallel:
+    #   inspections-summary    → challan count (matches dashboard tile)
+    #   top-kpis               → totalFineImposed (matches Fine Amount)
+    #   challan-status-breakdown → paidCount, unpaidCount, paidAmount,
+    #                              unpaidAmount (matches Paid/Unpaid tiles)
+    # All three endpoints REQUIRE a (tehsilId, startDate, endDate)
+    # tuple. The dashboard defaults to a rolling 12-month window, so
+    # we mirror that when the user gives no explicit date range.
+    # SDEO has NO 'overdue' concept; we therefore drop that column
+    # entirely instead of estimating it.
+    if (focused_metric == "challans"
+            and parent_rows
+            and child_rows
+            and not officer_rows
+            and level in ("district", "division")):
+        # Resolve child tehsils with their tehsil_ids so we can call
+        # PCM dashboard-counts. The cached child_rows from
+        # inspection_performance carry tehsil_name but not tehsil_id
+        # at division-level (which would be districts, not tehsils).
+        # So we always resolve tehsils via dim_tehsil JOIN.
+        tehsil_rows: List[Dict[str, Any]] = []
+        try:
+            if level == "district":
+                tehsil_rows = db.fetch_all(
+                    "SELECT t.tehsil_id, t.tehsil_name "
+                    "FROM dim_tehsil t "
+                    "JOIN dim_district d ON d.district_id = t.district_id "
+                    "WHERE d.district_name = %s "
+                    "ORDER BY t.tehsil_name",
+                    (name,),
+                )
+            elif level == "division":
+                tehsil_rows = db.fetch_all(
+                    "SELECT t.tehsil_id, t.tehsil_name "
+                    "FROM dim_tehsil t "
+                    "JOIN dim_district d ON d.district_id = t.district_id "
+                    "JOIN dim_division v ON v.division_id = d.division_id "
+                    "WHERE v.division_name = %s "
+                    "ORDER BY t.tehsil_name",
+                    (name,),
+                )
+        except Exception as e:
+            log.warning("focused-challan tehsil resolve failed: %s", e)
+
+        # Decide source by date-range presence.
+        #
+        # No explicit date in the question → mirror the PERA360
+        # dashboard tile which uses PCM /Pcm/dashboard-counts. This
+        # endpoint is all-time and returns totalChallans /
+        # totalFineAmount / paidChallans / unPaidChallans /
+        # paidChallanAmount / unPaidChallanAmount per tehsil. Probing
+        # shows it agrees with the dashboard tile to the last rupee.
+        #
+        # Explicit date range supplied → fan out the SDEO date-ranged
+        # endpoints (inspections-summary + top-kpis +
+        # challan-status-breakdown) so the answer respects the user's
+        # window.
+        from datetime import datetime as _dt, date as _date, timedelta as _td
+        has_explicit_date = bool(start_date and end_date)
+
+        if has_explicit_date:
+            date_label = (f"{start_date.strftime('%d %b %Y')} – "
+                          f"{end_date.strftime('%d %b %Y')}")
+        else:
+            date_label = "all-time"
+        source_note = (
+            f"live PCM /dashboard-counts (FromDate/ToDate) per tehsil — "
+            f"matches the PERA360 dashboard tiles exactly"
+        )
+
+        if tehsil_rows:
+            from concurrent.futures import ThreadPoolExecutor, as_completed
+
+            def _fetch(tid: int, tname: str) -> Dict[str, Any]:
+                c = _fetch_pcm_dashboard_counts(tid, start_date, end_date)
+                return {
+                    "tehsil_name": tname,
+                    "challans":     c["challans"],
+                    "fine_imposed": c["fine"],
+                    "paid_n":       c["paid_n"],
+                    "paid_amt":     c["paid_amt"],
+                    "unpaid_n":     c["unpaid_n"],
+                    "unpaid_amt":   c["unpaid_amt"],
+                }
+
+            workers = min(8, max(2, len(tehsil_rows)))
+            by_name: Dict[str, Dict[str, Any]] = {}
+            with ThreadPoolExecutor(max_workers=workers) as ex:
+                futs = [
+                    ex.submit(_fetch, t["tehsil_id"], t["tehsil_name"])
+                    for t in tehsil_rows
+                ]
+                for f in as_completed(futs):
+                    r = f.result()
+                    by_name[r["tehsil_name"]] = r
+        else:
+            by_name = {}
+
+        per_t: List[Dict[str, Any]] = []
+        for t in tehsil_rows:
+            tn = t["tehsil_name"]
+            r = by_name.get(tn, {})
+            per_t.append({
+                "tehsil":       tn,
+                "challans":     int(r.get("challans") or 0),
+                "fine_imposed": float(r.get("fine_imposed") or 0),
+                "paid_n":       int(r.get("paid_n") or 0),
+                "paid_amt":     float(r.get("paid_amt") or 0),
+                "unpaid_n":     int(r.get("unpaid_n") or 0),
+                "unpaid_amt":   float(r.get("unpaid_amt") or 0),
+            })
+
+        per_t.sort(key=lambda x: x["challans"], reverse=True)
+        T = {
+            "challans":     sum(x["challans"]     for x in per_t),
+            "fine_imposed": sum(x["fine_imposed"] for x in per_t),
+            "paid_n":       sum(x["paid_n"]       for x in per_t),
+            "paid_amt":     sum(x["paid_amt"]     for x in per_t),
+            "unpaid_n":     sum(x["unpaid_n"]     for x in per_t),
+            "unpaid_amt":   sum(x["unpaid_amt"]   for x in per_t),
+        }
+        recovery_pct = (
+            (T["paid_amt"] / T["fine_imposed"] * 100) if T["fine_imposed"] else 0
+        )
+        scope_label = (
+            f" ({date_label})" if has_explicit_date else " (all-time)"
+        )
+        intro = (
+            f"In the {name} {level.title()}{scope_label}, PERA has "
+            f"issued {T['challans']:,} challans with a cumulative fine "
+            f"of Rs. {int(T['fine_imposed']):,}. Recovery so far is "
+            f"Rs. {int(T['paid_amt']):,} ({recovery_pct:.1f}% by amount). "
+            f"Outstanding (unpaid) is Rs. {int(T['unpaid_amt']):,} "
+            f"across {T['unpaid_n']:,} challans."
+        )
+        body = "\n\nTehsil-wise Challan & Recovery Breakdown:\n\n"
+        body += (
+            "| Tehsil | Challans | Fine Imposed (Rs) "
+            "| Paid (n) | Paid (Rs) | Unpaid (n) | Unpaid (Rs) |\n"
+            "|---|---:|---:|---:|---:|---:|---:|\n"
+        )
+        for r in per_t:
+            body += (
+                f"| {r['tehsil']} "
+                f"| {r['challans']:,} "
+                f"| {int(r['fine_imposed']):,} "
+                f"| {r['paid_n']:,} "
+                f"| {int(r['paid_amt']):,} "
+                f"| {r['unpaid_n']:,} "
+                f"| {int(r['unpaid_amt']):,} |\n"
+            )
+        body += (
+            f"| **Total** "
+            f"| **{T['challans']:,}** "
+            f"| **{int(T['fine_imposed']):,}** "
+            f"| **{T['paid_n']:,}** "
+            f"| **{int(T['paid_amt']):,}** "
+            f"| **{T['unpaid_n']:,}** "
+            f"| **{int(T['unpaid_amt']):,}** |\n"
+        )
+        direct_answer = intro + body
+        from datetime import datetime as _dt2
+        now = _dt2.now()
+        h = now.hour
+        ampm = "PM" if h >= 12 else "AM"
+        h12 = ((h + 11) % 12) + 1
+        direct_answer += (
+            f"\nData last updated: {now.day} {_MONTH_NAMES[now.month - 1]} "
+            f"{now.year}, {h12}:{now.minute:02d} {ampm}.\n"
+        )
+
+    elif (focused_metric
             and parent_rows
             and child_rows
             and not officer_rows):
@@ -2683,7 +3872,7 @@ def _query_tehsil_live(
         and (arrest_total is not None or pcm_total is not None)
     )
     if show_all_time_footer:
-        context += "\n#### All-time indicators (PCM endpoint, not date-filtered)\n\n"
+        context += "\n#### All-time indicators (cumulative, not limited to the selected dates)\n\n"
         if arrest_total is not None:
             context += f"- Arrest cases: {int(arrest_total):,}\n"
         if pcm_total is not None:
@@ -2992,8 +4181,7 @@ def render_focused_metric_summary(
             and officer_source == "Pcm/officer-inspection-details"
             and money_only):
         head += (
-            "\n#### Officer Financial Breakdown\n"
-            "_Source: PCM officer-inspection-details endpoint._\n\n"
+            "\n#### Officer Financial Breakdown\n\n"
             "| Officer | Challans | Fine Imposed | Paid Recovery % |\n"
             "| --- | ---: | ---: | ---: |\n"
         )
@@ -3461,7 +4649,7 @@ def _format_aggregate_context(
 
     # All-time PCM footer
     if agg.get("arrest_total") or agg.get("pcm_total"):
-        head += "\n#### All-time indicators (PCM endpoint, not date-filtered)\n\n"
+        head += "\n#### All-time indicators (cumulative, not limited to the selected dates)\n\n"
         if agg.get("arrest_total"):
             head += f"- Arrest cases: {int(agg['arrest_total']):,}\n"
         if agg.get("pcm_total"):
