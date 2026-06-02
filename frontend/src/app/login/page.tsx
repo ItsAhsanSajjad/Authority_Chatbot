@@ -21,6 +21,14 @@ export default function LoginPage() {
   const [submitting, setSubmitting] = useState(false);
   const [stage, setStage] = useState<"booting" | "ready">("booting");
   const [focused, setFocused] = useState<string | null>(null);
+  // FOUC gate. The whole page is styled via <style jsx> which only
+  // attaches after JS hydrates — the server-sent HTML therefore has no
+  // CSS at all and shows a flash of raw text on first paint. Hold the
+  // root invisible until React has mounted on the client; the
+  // hydrated render contains the styles, so the first visible frame is
+  // already styled. Net effect: instant styled paint, no flash.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
   const cardRef = useRef<HTMLDivElement | null>(null);
 
   // Auth gate + boot animation
@@ -98,7 +106,13 @@ export default function LoginPage() {
   );
 
   return (
-    <div className={`lp-root stage-${stage}`}>
+    <div
+      className={`lp-root stage-${stage}`}
+      style={{
+        opacity: mounted ? 1 : 0,
+        transition: "opacity 80ms ease-out",
+      }}
+    >
       {/* ─── Background layers ─── */}
       <div className="lp-bg-gradient" aria-hidden />
       <div className="lp-bg-grid" aria-hidden />
@@ -547,6 +561,19 @@ export default function LoginPage() {
           opacity: 0;
           animation: lp-card-in 900ms cubic-bezier(0.22, 1, 0.36, 1) 200ms forwards;
         }
+        /* Scale the card up on tablet+ and desktop+. Without these
+           breakpoints a 460px card looks lost on a 1920px monitor —
+           the form ends up centred in a sea of empty space and reads
+           as a mobile-only screen. */
+        @media (min-width: 768px) {
+          .lp-card { max-width: 520px; }
+        }
+        @media (min-width: 1280px) {
+          .lp-card { max-width: 580px; }
+        }
+        @media (min-width: 1600px) {
+          .lp-card { max-width: 640px; }
+        }
         .lp-card-glow {
           position: absolute;
           inset: -3px;
@@ -641,6 +668,12 @@ export default function LoginPage() {
         @media (max-width: 480px) {
           .lp-card-body { padding: 28px 22px 22px; }
         }
+        @media (min-width: 1280px) {
+          .lp-card-body { padding: 48px 52px 36px; }
+        }
+        @media (min-width: 1600px) {
+          .lp-card-body { padding: 56px 64px 44px; }
+        }
 
         /* ── Crest ── */
         .lp-crest {
@@ -653,6 +686,12 @@ export default function LoginPage() {
           align-items: center;
           justify-content: center;
           isolation: isolate;
+        }
+        @media (min-width: 1280px) {
+          .lp-crest { width: 112px; height: 112px; margin-bottom: 22px; }
+        }
+        @media (min-width: 1600px) {
+          .lp-crest { width: 128px; height: 128px; margin-bottom: 26px; }
         }
         .lp-crest-image {
           position: relative;
